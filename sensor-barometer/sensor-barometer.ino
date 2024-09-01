@@ -1,5 +1,6 @@
 // include the WiFi library and HTTPClient
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 // include json library (https://github.com/bblanchon/ArduinoJson)
 #include <ArduinoJson.h>

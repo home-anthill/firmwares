@@ -1,5 +1,6 @@
 // include wifi library
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 // include http library (also required to use 'WiFiClientSecure')
 #include <HTTPClient.h>
 // include MQTT library (https://pubsubclient.knolleary.net/api)

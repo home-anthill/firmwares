@@ -78,6 +78,7 @@ jobs:
           cp secrets-template sensor-airquality-pir/secrets.h
           cp secrets-template sensor-barometer/secrets.h
           cp secrets-template sensor-dht-light/secrets.h
+          cp secrets-template sensor-power-outage/secrets.h
 
           # build
           cd sensor-airquality-pir
@@ -88,3 +89,6 @@ jobs:
           cd ..
           cd sensor-dht-light
           arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./sensor-dht-light.ino
+          cd ..
+          cd sensor-power-outage
+          arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./sensor-power-outage.ino

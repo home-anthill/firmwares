@@ -82,9 +82,9 @@ void mqtt_notify_online(String uuid) {
   Serial.print("mqtt_notify_online - called with uuid = ");
   Serial.println(uuid);
 
-  char payload_to_send[562];
+ char payload_to_send[562];
   DynamicJsonDocument inner_payload_msg(50);
-  inner_payload_msg["value"] = true;
+  inner_payload_msg["value"] = 1;
   DynamicJsonDocument payloadMsg(512);
   payloadMsg["uuid"] = uuid;
   payloadMsg["apiToken"] = API_TOKEN;

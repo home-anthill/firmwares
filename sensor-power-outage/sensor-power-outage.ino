@@ -79,7 +79,7 @@ void setup() {
   // 4. register to the server
   Serial.println("setup - registering this device...");
   String features = "[";
-  features += "{\"type\": \"sensor\",\"name\": \"powerOutage\",\"enable\": true,\"order\": 1,\"unit\": \"\"}";
+  features += "{\"type\": \"sensor\",\"name\": \"poweroutage\",\"enable\": true,\"order\": 1,\"unit\": \"-\"}";
   features += "]";
   int result = -999;
   # if SSL==true

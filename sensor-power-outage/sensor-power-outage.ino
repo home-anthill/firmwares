@@ -44,7 +44,7 @@ void setup() {
   delay(1000);
 
   Serial.println("setup - starting...");
-  
+
   // 0. configure hardware
   //    disable ESP builtin LED
   //    but not all ESP boards have this variable defined, so I should check the existance of `LED_BUILTIN`.
@@ -62,7 +62,7 @@ void setup() {
   # if SSL==true
     Serial.println("setup - running with SSL enabled");
     wifi_init_ca();
-  # else 
+  # else
     Serial.println("setup - running WITHOUT SSL");
   # endif
 
@@ -77,11 +77,13 @@ void setup() {
 
   // 4. register to the server
   Serial.println("setup - registering this device...");
-  String features = "[]";
+  String features = "[";
+  features += "{\"type\": \"sensor\",\"name\": \"powerOutage\",\"enable\": true,\"order\": 1,\"unit\": \"\"}";
+  features += "]";
   int result = -999;
   # if SSL==true
     result = register_secure_server(wifi_client, mac_address, features);
-  # else 
+  # else
     result = register_insecure_server(wifi_client, mac_address, features);
   # endif
   Serial.print("setup - register returned result=");

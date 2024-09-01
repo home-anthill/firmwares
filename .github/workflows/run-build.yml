@@ -46,16 +46,16 @@ jobs:
       - name: Install Board support
         run: |
           arduino-cli core update-index
-          arduino-cli config add board_manager.additional_urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+          arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
           arduino-cli core update-index
-          arduino-cli core install esp32:esp32
+          arduino-cli core install esp32:esp32@2.0.17
 
       - name: Install libraries
         run: |
           arduino-cli lib update-index
 
           # common libs
-          arduino-cli lib install "ArduinoJson"@7.0.4
+          arduino-cli lib install "ArduinoJson"@7.1.0
           arduino-cli lib install "HttpClient"@2.2.0
           arduino-cli lib install "PubSubClient"@2.8.0
 

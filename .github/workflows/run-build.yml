@@ -48,14 +48,14 @@ jobs:
           arduino-cli core update-index
           arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
           arduino-cli core update-index
-          arduino-cli core install esp32:esp32@3.0.4
+          arduino-cli core install esp32:esp32@3.1.0
 
       - name: Install libraries
         run: |
           arduino-cli lib update-index
 
           # common libs
-          arduino-cli lib install "ArduinoJson"@7.1.0
+          arduino-cli lib install "ArduinoJson"@7.2.1
           arduino-cli lib install "HttpClient"@2.2.0
           arduino-cli lib install "PubSubClient"@2.8.0
 
@@ -67,7 +67,7 @@ jobs:
           arduino-cli lib install "Adafruit Unified Sensor"@1.1.14
           arduino-cli lib install "DHT sensor library"@1.4.6
           arduino-cli lib install "XENSIV Digital Pressure Sensor"@1.0.0
-          arduino-cli lib install --git-url https://github.com/Seeed-Studio/Grove_Air_quality_Sensor
+          arduino-cli lib install "Grove_Air_quality_Sensor"@1.2.0
           arduino-cli lib install --git-url https://github.com/Seeed-Studio/Grove_Digital_Light_Sensor
 
       # to get a list of FQBN you can run: `arduino-cli board listall`

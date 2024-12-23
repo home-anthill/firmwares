@@ -67,7 +67,7 @@ jobs:
           arduino-cli lib install "Adafruit Unified Sensor"@1.1.14
           arduino-cli lib install "DHT sensor library"@1.4.6
           arduino-cli lib install "XENSIV Digital Pressure Sensor"@1.0.0
-          arduino-cli lib install "Grove_Air_quality_Sensor"@1.2.0
+          arduino-cli lib install --git-url https://github.com/Seeed-Studio/Grove_Air_quality_Sensor
           arduino-cli lib install --git-url https://github.com/Seeed-Studio/Grove_Digital_Light_Sensor
 
       # to get a list of FQBN you can run: `arduino-cli board listall`

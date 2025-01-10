@@ -40,7 +40,7 @@ void mqtt_connect(String uuid) {
     # endif
 
     if (connected) {
-      Serial.print("mqtt_connect - connected and subscribing with uuid: ");
+      Serial.print("mqtt_connect - connected and subscribed with uuid: ");
       Serial.println(uuid);
       mqtt_retries = 0;
     } else {

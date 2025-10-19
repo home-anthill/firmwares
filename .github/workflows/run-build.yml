@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-esp32-board-3xx:
     strategy:
         matrix:
           esp-devices: [esp32, esp32s2, esp32s3]
@@ -48,7 +48,7 @@ jobs:
           arduino-cli core update-index
           arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
           arduino-cli core update-index
-          arduino-cli core install esp32:esp32@3.1.0
+          arduino-cli core install esp32:esp32@3.3.2
 
       - name: Install libraries
         run: |
@@ -67,28 +67,92 @@ jobs:
           arduino-cli lib install "Adafruit Unified Sensor"@1.1.14
           arduino-cli lib install "DHT sensor library"@1.4.6
           arduino-cli lib install "XENSIV Digital Pressure Sensor"@1.0.0
-          arduino-cli lib install --git-url https://github.com/Seeed-Studio/Grove_Air_quality_Sensor
-          arduino-cli lib install --git-url https://github.com/Seeed-Studio/Grove_Digital_Light_Sensor
+          arduino-cli lib install "Grove - Air quality ensor"@1.0.2
+          arduino-cli lib install "Grove - Digital Light Sensor"@2.0.0
 
       # to get a list of FQBN you can run: `arduino-cli board listall`
       - name: Building firmwares for ${{ matrix.esp-devices }}
         run: |
           # Prepare sensor.h files based on `secrets-template`, because
           # we don't need real config files to build all firmwares in CI.
-          cp secrets-template sensor-airquality-pir/secrets.h
-          cp secrets-template sensor-barometer/secrets.h
-          cp secrets-template sensor-dht-light/secrets.h
-          cp secrets-template sensor-power-outage/secrets.h
+          cp secrets-template airquality-pir/secrets.h
+          cp secrets-template barometer/secrets.h
+          cp secrets-template dht-light/secrets.h
+          cp secrets-template power-outage/secrets.h
 
           # build
-          cd sensor-airquality-pir
-          arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./sensor-airquality-pir.ino
+          cd airquality-pir
+          arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./airquality-pir.ino
           cd ..
-          cd sensor-barometer
-          arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./sensor-barometer.ino
+          cd barometer
+          arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./barometer.ino
           cd ..
-          cd sensor-dht-light
-          arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./sensor-dht-light.ino
+          cd dht-light
+          arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./dht-light.ino
           cd ..
-          cd sensor-power-outage
-          arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./sensor-power-outage.ino
+          cd power-outage
+          arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./power-outage.ino
+  
+  # air conditioner controllers are built with esp32 board support 2.0.17 and not 3
+  build-esp32-board-2xx:
+    strategy:
+        matrix:
+          # esp32s2 is not supported for air conditioner controllers
+          # more info at https://github.com/crankyoldgit/IRremoteESP8266/issues/1922
+          esp-devices: [esp32, esp32s3]
+
+    name: Run and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Init arduino-cli.yaml config file and apply custom configs
+        run: |
+          # init with defaults
+          arduino-cli config init
+
+          # enable_unsafe_install to be able to install libraries via git
+          arduino-cli config set library.enable_unsafe_install true
+
+      - name: Install Board support
+        run: |
+          arduino-cli core update-index
+          arduino-cli config add board_manager.additional_urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@2.0.17
+
+      - name: Install libraries
+        run: |
+          arduino-cli lib update-index
+
+          # common libs
+          arduino-cli lib install "ArduinoJson"@7.2.1
+          arduino-cli lib install "HttpClient"@2.2.0
+          arduino-cli lib install "PubSubClient"@2.8.0
+
+          # specific libs for devices
+          arduino-cli lib install "IRremoteESP8266"@2.8.6
+
+      # to get a list of FQBN you can run: `arduino-cli board listall`
+      - name: Building firmwares for ${{ matrix.esp-devices }}
+        run: |
+          # Prepare sensor.h files based on `secrets-template`, because
+          # we don't need real config files to build all firmwares in CI.
+          cp secrets-template ac-beko/secrets.h
+          cp secrets-template ac-lg/secrets.h
+
+          # build ac-beko
+          cd ac-beko
+          arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./ac-beko.ino
+          cd ..
+
+          # build ac-lg
+          cd ac-lg
+          arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./ac-lg.ino
+          cd ..

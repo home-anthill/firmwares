@@ -30,7 +30,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Arduino CLI
         uses: arduino/setup-arduino-cli@v2
@@ -55,7 +55,7 @@ jobs:
           arduino-cli lib update-index
 
           # common libs
-          arduino-cli lib install "ArduinoJson"@7.2.1
+          arduino-cli lib install "ArduinoJson"@7.4.2
           arduino-cli lib install "HttpClient"@2.2.0
           arduino-cli lib install "PubSubClient"@2.8.0
 
@@ -64,7 +64,7 @@ jobs:
           arduino-cli lib install "Time"@1.6.1
 
           # specific libs to aquire physical measures
-          arduino-cli lib install "Adafruit Unified Sensor"@1.1.14
+          arduino-cli lib install "Adafruit Unified Sensor"@1.1.15
           arduino-cli lib install "DHT sensor library"@1.4.6
           arduino-cli lib install "XENSIV Digital Pressure Sensor"@1.0.2
           arduino-cli lib install "Grove - Air quality sensor"@1.0.2
@@ -107,7 +107,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Arduino CLI
         uses: arduino/setup-arduino-cli@v2
@@ -132,7 +132,7 @@ jobs:
           arduino-cli lib update-index
 
           # common libs
-          arduino-cli lib install "ArduinoJson"@7.2.1
+          arduino-cli lib install "ArduinoJson"@7.4.2
           arduino-cli lib install "HttpClient"@2.2.0
           arduino-cli lib install "PubSubClient"@2.8.0
 

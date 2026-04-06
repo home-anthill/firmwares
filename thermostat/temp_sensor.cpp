@@ -1,7 +1,7 @@
 // include Arduino library to use Arduino function in cpp files
 #include <Arduino.h>
 
-// Temperature sensor DS18B20
+// Thermocouple MCP9600
 // include specific libraries:
 // - OneWire: https://github.com/PaulStoffregen/OneWire
 // - DallasTemperature: https://github.com/milesburton/Arduino-Temperature-Control-Library

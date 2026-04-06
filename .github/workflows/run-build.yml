@@ -48,7 +48,7 @@ jobs:
           arduino-cli core update-index
           arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
           arduino-cli core update-index
-          arduino-cli core install esp32:esp32@3.3.6
+          arduino-cli core install esp32:esp32@3.3.7
 
       - name: Install libraries
         run: |
@@ -72,6 +72,12 @@ jobs:
 
           # specific libs for devices
           arduino-cli lib install "IRremoteESP8266"@2.9.0
+
+          # specific libs for thermostat
+          arduino-cli lib install "Adafruit GFX Library"@1.12.5
+          arduino-cli lib install "Adafruit SSD1306"@2.5.16
+          arduino-cli lib install "Adafruit BusIO"@1.17.4
+          arduino-cli lib install "Adafruit MCP9600 Library"@2.0.4
 
       # to get a list of FQBN you can run: `arduino-cli board listall`
       - name: Building firmwares for ${{ matrix.esp-devices }}

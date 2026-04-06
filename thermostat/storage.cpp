@@ -1,3 +1,12 @@
+// NOTE: This file intentionally diverges from the shared storage.cpp used by all other
+// firmwares (ac-beko, ac-lg, airquality-pir, barometer, dht-light, power-outage).
+// The base functions (storage_get_uuid, storage_set_uuid, storage_get_features,
+// storage_set_features) are identical to those in the other firmwares.
+// The two extra functions below — storage_get_feature_values / storage_set_feature_values —
+// are thermostat-specific: they persist user-configurable controller state (setpoint,
+// tolerance) under the "featureValues" Preferences key, which no other firmware needs.
+// Do NOT blindly overwrite this file when syncing shared modules.
+
 // include Arduino library to use Arduino function in cpp files
 #include <Arduino.h>
 // include json library (https://github.com/bblanchon/ArduinoJson)
@@ -25,10 +34,19 @@ size_t storage_set_uuid(const char* uuid) {
 void storage_get_features(JsonArray features) {
   preferences.begin("device", true);
   String val = preferences.getString("features", "");
+  if (val.length() == 0) {
+    preferences.end();
+    return;
+  }
   JsonDocument doc;
-  deserializeJson(doc, val);
+  DeserializationError err = deserializeJson(doc, val);
+  if (err) {
+    Serial.printf("storage_get_features - deserializeJson failed: %s\n", err.c_str());
+    preferences.end();
+    return;
+  }
   JsonArray values = doc.as<JsonArray>();
-  for (int i = 0; i < values.size(); i++) {
+  for (size_t i = 0; i < values.size(); i++) {
     features.add(values[i]);
   }
   preferences.end();
@@ -36,10 +54,10 @@ void storage_get_features(JsonArray features) {
 
 size_t storage_set_features(JsonArray features) {
   preferences.begin("device", false);
-  size_t len = preferences.putInt("numfeatures", features.size());
+  preferences.putInt("numfeatures", features.size());
   String output;
-  size_t written = serializeJson(features, output);
-  preferences.putString("features", output.c_str());
+  serializeJson(features, output);
+  size_t len = preferences.putString("features", output.c_str());
   preferences.end();
   return len;
 }
@@ -47,10 +65,19 @@ size_t storage_set_features(JsonArray features) {
 void storage_get_feature_values(JsonArray featureValues) {
   preferences.begin("device", true);
   String val = preferences.getString("featureValues", "");
+  if (val.length() == 0) {
+    preferences.end();
+    return;
+  }
   JsonDocument doc;
-  deserializeJson(doc, val);
+  DeserializationError err = deserializeJson(doc, val);
+  if (err) {
+    Serial.printf("storage_get_feature_values - deserializeJson failed: %s\n", err.c_str());
+    preferences.end();
+    return;
+  }
   JsonArray values = doc.as<JsonArray>();
-  for (int i = 0; i < values.size(); i++) {
+  for (size_t i = 0; i < values.size(); i++) {
     featureValues.add(values[i]);
   }
   preferences.end();
@@ -58,10 +85,10 @@ void storage_get_feature_values(JsonArray featureValues) {
 
 size_t storage_set_feature_values(JsonArray featureValues) {
   preferences.begin("device", false);
-  size_t len = preferences.putInt("numfeatures", featureValues.size());
+  preferences.putInt("numfeatures", featureValues.size());
   String output;
-  size_t written = serializeJson(featureValues, output);
-  preferences.putString("featureValues", output.c_str());
+  serializeJson(featureValues, output);
+  size_t len = preferences.putString("featureValues", output.c_str());
   preferences.end();
   return len;
 }

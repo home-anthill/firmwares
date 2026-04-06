@@ -1,3 +1,5 @@
+#pragma once
+
 # if SSL==true
 extern WiFiClientSecure wifi_client;
 # else 

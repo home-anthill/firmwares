@@ -1,3 +1,8 @@
+// NOTE: This file intentionally diverges from storage.h in all other firmwares.
+// The two extra declarations at the bottom are thermostat-specific.
+// See storage.cpp for full explanation.
+#pragma once
+
 #include <ArduinoJson.h>
 
 size_t storage_get_uuid(char* saved_uuid);

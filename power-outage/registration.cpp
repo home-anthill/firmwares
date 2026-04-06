@@ -13,16 +13,23 @@
 // include all local files
 #include "storage.h"
 
-// private local functions
-int register_server(WiFiClient& wifi_client, const char* mac_address, JsonDocument features);
-void get_register_url(char** register_url);
-void build_register_payload(char** register_payload, const char* mac_address, JsonDocument features);
+// HTTP protocol prefix at file scope (not inside a function)
+#if SSL==true
+  #define HTTP_PROTOCOL "https://"
+#else
+  #define HTTP_PROTOCOL "http://"
+#endif
 
-int register_secure_server(WiFiClientSecure& wifi_client, const char* mac_address, JsonDocument features) {
+// private local functions
+int register_server(WiFiClient& wifi_client, const char* mac_address, const JsonDocument& features);
+void get_register_url(char** register_url);
+void build_register_payload(char* register_payload, size_t max_len, const char* mac_address, const JsonDocument& features);
+
+int register_secure_server(WiFiClientSecure& wifi_client, const char* mac_address, const JsonDocument& features) {
   return register_server(wifi_client, mac_address, features);
 }
 
-int register_insecure_server(WiFiClient& wifi_client, const char* mac_address, JsonDocument features) {
+int register_insecure_server(WiFiClient& wifi_client, const char* mac_address, const JsonDocument& features) {
   return register_server(wifi_client, mac_address, features);
 }
 
@@ -35,30 +42,44 @@ int register_insecure_server(WiFiClient& wifi_client, const char* mac_address, J
 *  3 => cannot deserialize register JSON response payload (probably malformed or too big)
 *  4 => response doesn't match request device (either mac, manufacturer or model are different)
 */
-int register_server(WiFiClient& wifi_client, const char* mac_address, JsonDocument features) {
+int register_server(WiFiClient& wifi_client, const char* mac_address, const JsonDocument& features) {
   HTTPClient http;
-  char* register_url;
-  get_register_url(&register_url);
-  Serial.printf("register_server - register_url = %s\n", register_url);
+  int http_response_code = 0;
+  int register_retries = 0;
+  const int max_register_retries = 10;
 
-  http.begin(wifi_client, register_url);
-  // free register_url because created in 'get_register_url' via malloc()
-  free(register_url);
-  http.addHeader("Content-Type", "application/json; charset=utf-8");
+  do {
+    char* register_url;
+    get_register_url(&register_url);
+    if (register_url == nullptr) {
+      Serial.println("register_server - error: failed to allocate register_url");
+      return 1;
+    }
+    Serial.printf("register_server - register_url = %s\n", register_url);
 
-  char* register_payload;
-  build_register_payload(&register_payload, mac_address, features);
-  Serial.printf("register_server - register with payload: %s\n", register_payload);
+    http.begin(wifi_client, register_url);
+    free(register_url);
+    http.addHeader("Content-Type", "application/json; charset=utf-8");
 
-  const int http_response_code = http.POST(register_payload);
-  if (http_response_code <= 0) {
-    Serial.printf("register_server - error on sending POST with http_response_code = %d\n", http_response_code);
-    http.end();
-    Serial.println("register_server - retrying in 60 seconds...");
-    delay(60000);
-    // call again register_server() recursively after the delay
-    return register_server(wifi_client, mac_address, features);
-  }
+    char register_payload[2048];
+    build_register_payload(register_payload, sizeof(register_payload), mac_address, features);
+    Serial.printf("register_server - register with payload: %s\n", register_payload);
+
+    http_response_code = http.POST(register_payload);
+    if (http_response_code <= 0) {
+      Serial.printf("register_server - error on sending POST with http_response_code = %d\n", http_response_code);
+      http.end();
+      register_retries++;
+      if (register_retries >= max_register_retries) {
+        Serial.println("register_server - max retries reached, rebooting...");
+        ESP.restart();
+      }
+      Serial.printf("register_server - retrying in 60 seconds... (attempt %d/%d)\n", register_retries, max_register_retries);
+      delay(60000);
+      continue;
+    }
+    break;
+  } while (true);
   Serial.printf("register_server - http_response_code = %d\n", http_response_code);
 
   if (http_response_code != HTTP_CODE_OK && http_response_code != HTTP_CODE_CONFLICT) {
@@ -68,7 +89,7 @@ int register_server(WiFiClient& wifi_client, const char* mac_address, JsonDocume
 
   if (http_response_code == HTTP_CODE_OK) {
     Serial.println("register_server - HTTP_CODE_OK");
-    StaticJsonDocument<2048> static_doc;
+    JsonDocument static_doc;
     DeserializationError err = deserializeJson(static_doc, http.getStream());
     // There is no need to check for specific reasons,
     // because err evaluates to true/false in this case,
@@ -77,14 +98,19 @@ int register_server(WiFiClient& wifi_client, const char* mac_address, JsonDocume
       Serial.println("register_server - deserialization succeeded!");
       serializeJsonPretty(static_doc, Serial);
       Serial.println();
-      const char* uuid_value = static_doc["uuid"];
-      const char* mac_value = static_doc["mac"];
-      const char* manufacturer_value = static_doc["manufacturer"];
-      const char* model_value = static_doc["model"];
+      const char* uuid_value = static_doc["uuid"] | static_cast<const char*>(nullptr);
+      const char* mac_value = static_doc["mac"] | static_cast<const char*>(nullptr);
+      const char* manufacturer_value = static_doc["manufacturer"] | static_cast<const char*>(nullptr);
+      const char* model_value = static_doc["model"] | static_cast<const char*>(nullptr);
       Serial.printf("register_server - uuid_value: %s\n", uuid_value);
       Serial.printf("register_server - mac_value: %s\n", mac_value);
       Serial.printf("register_server - manufacturer_value: %s\n", manufacturer_value);
       Serial.printf("register_server - model_value: %s\n", model_value);
+
+      if (uuid_value == nullptr || mac_value == nullptr || manufacturer_value == nullptr || model_value == nullptr) {
+        Serial.println("register_server - error missing fields in response JSON");
+        return 3;
+      }
 
       if (strcmp(mac_value, mac_address) != 0 || strcmp(manufacturer_value, MANUFACTURER) != 0 || strcmp(model_value, MODEL) != 0) {
         Serial.println("register_server - error request and response data don't match");
@@ -92,9 +118,9 @@ int register_server(WiFiClient& wifi_client, const char* mac_address, JsonDocume
       }
 
       // print all features on terminal (debug purposes)
-      JsonArray features = static_doc["features"].as<JsonArray>();
-      for (int i = 0; i < features.size(); i++) {
-        JsonObject feature = features[i];
+      JsonArray features_arr = static_doc["features"].as<JsonArray>();
+      for (size_t i = 0; i < features_arr.size(); i++) {
+        JsonObject feature = features_arr[i];
         const char* f_uuid_value = feature["uuid"];
         const char* f_type_value = feature["type"];
         const char* f_name_value = feature["name"];
@@ -140,23 +166,17 @@ int register_server(WiFiClient& wifi_client, const char* mac_address, JsonDocume
 
 void get_register_url(char** register_url) {
   Serial.println("get_register_url - called");
-  # if SSL==true
-    #define HTTP_PROTOCOL "https://"
-  # else 
-    #define HTTP_PROTOCOL "http://"
-  # endif
-
-  size_t register_url_len = strlen(HTTP_PROTOCOL) + strlen(SERVER_DOMAIN) + 1 + strlen(SERVER_PORT) + strlen(SERVER_PATH) + 1;
-  char* result = (char*)malloc(register_url_len);
+  size_t register_url_len = strlen(HTTP_PROTOCOL) + strlen(SERVER_DOMAIN) + 1 + snprintf(NULL, 0, "%d", SERVER_PORT) + strlen(SERVER_PATH) + 1;
+  char* result = static_cast<char*>(malloc(register_url_len));
   if (result) {
-    snprintf(result, register_url_len, "%s%s:%s%s", HTTP_PROTOCOL, SERVER_DOMAIN, SERVER_PORT, SERVER_PATH);
+    snprintf(result, register_url_len, "%s%s:%d%s", HTTP_PROTOCOL, SERVER_DOMAIN, SERVER_PORT, SERVER_PATH);
+    Serial.printf("get_register_url - result = %s\n", result);
   }
-  Serial.printf("get_register_url - result = %s\n", result);
   /* Set output parameters */
   *register_url = result;
 }
 
-void build_register_payload(char** register_payload, const char* mac_address, JsonDocument features) {
+void build_register_payload(char* register_payload, size_t max_len, const char* mac_address, const JsonDocument& features) {
   Serial.printf("build_register_payload mac_address %s\n", mac_address);
   JsonDocument doc;
   doc["mac"] = mac_address;
@@ -164,8 +184,6 @@ void build_register_payload(char** register_payload, const char* mac_address, Js
   doc["model"] = MODEL;
   doc["apiToken"] = API_TOKEN;
   doc["features"] = features;
-  char result[2048];
-  serializeJson(doc, result);
-  Serial.printf("build_register_payload result %s\n", result);
-  *register_payload = result;
+  serializeJson(doc, register_payload, max_len);
+  Serial.printf("build_register_payload result %s\n", register_payload);
 }

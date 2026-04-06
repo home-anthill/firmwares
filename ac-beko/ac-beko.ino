@@ -22,7 +22,9 @@
 char mac_address[18];
 
 // private functions
-void mqtt_callback(char* topic, byte* payload, unsigned int length);
+void mqtt_callback(char* topic, uint8_t* payload, unsigned int length);
+bool get_feature_uuid_by_name(char* featureUuid, size_t max_len, const char* name);
+JsonDocument buildFeatures();
 
 // device_uuid global variable
 char saved_device_uuid[37];
@@ -30,19 +32,25 @@ char saved_device_uuid[37];
 JsonDocument doc_features;
 JsonArray saved_features = doc_features.to<JsonArray>();
 
-void get_feature_uuid_by_name(char* featureUuid, const char* name) {
+bool get_feature_uuid_by_name(char* featureUuid, size_t max_len, const char* name) {
   for (int i = 0; i < saved_features.size(); i++) {
     JsonObject feature = saved_features[i];
     const char* uuidval = feature["uuid"];
     const char* nameval = feature["name"];
+    if (uuidval == nullptr || nameval == nullptr) {
+      continue;
+    }
     if (strcmp(name, nameval) == 0) {
-      strcpy(featureUuid, uuidval);
-      return;
+      strncpy(featureUuid, uuidval, max_len - 1);
+      featureUuid[max_len - 1] = '\0';
+      return true;
     }
   }
+  featureUuid[0] = '\0';
+  return false;
 }
 
-void mqtt_callback(char* topic, byte* payload, unsigned int length) {
+void mqtt_callback(char* topic, uint8_t* payload, unsigned int length) {
   Serial.println("mqtt_callback - called");
   ir_send_command(topic, payload, length);
 }
@@ -118,7 +126,7 @@ void setup() {
   // 4. register to the server
   Serial.println("setup - registering this device...");
   JsonDocument features = buildFeatures();
-  int result = -999;
+  int result = -1;
   # if SSL==true
     result = register_secure_server(wifi_client, mac_address, features);
   # else 
@@ -170,7 +178,7 @@ void setup() {
 
 void loop() {
   // if 'saved_device_uuid' is not defined, it's an unregistered device
-  if (saved_device_uuid == NULL || strlen(saved_device_uuid) == 0) {
+  if (strlen(saved_device_uuid) == 0) {
     Serial.println("loop - saved_device_uuid NOT FOUND, cannot continue...");
     delay(60000);
     return;

@@ -1,3 +1,4 @@
+#include <math.h>
 // include Arduino library to use Arduino function in cpp files
 #include <Arduino.h>
 // include library to configure I2C port
@@ -27,7 +28,7 @@ float barometer_get_temperature() {
     Serial.printf("barometer_get_temperature - temperature = %.2f °C\n", temperature);
     return temperature;
   }
-  return -999;
+  return NAN;
 }
 
 float barometer_get_airpressure() {
@@ -38,5 +39,5 @@ float barometer_get_airpressure() {
     Serial.printf("barometer_get_airpressure - pressure = %.2f hPAa\n", pressure);
     return pressure;
   }
-  return -999;
+  return NAN;
 }

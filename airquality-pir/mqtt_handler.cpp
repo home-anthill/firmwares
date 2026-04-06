@@ -19,13 +19,13 @@ int mqtt_retries = 0;
 void mqtt_init(Client& wifi_client, std::function<void (char *, uint8_t *, unsigned int)> callback) {
   mqtt_client.setServer(mqtt_url, mqtt_port);
   mqtt_client.setClient(wifi_client);
+  mqtt_client.setBufferSize(4096);
   mqtt_client.setCallback(callback);
 }
 
 void mqtt_connect(const char* uuid) { 
   while (!mqtt_client.connected()) {
     Serial.printf("mqtt_connect - attempting MQTT connection with client id = device_uuid = %s\n", uuid);
-    mqtt_client.setBufferSize(4096);
 
     bool connected = false;
     # if MQTT_AUTH==true
@@ -61,38 +61,34 @@ void mqtt_notify_value(const char* device_uuid, const char* feature_uuid, const 
   Serial.printf("mqtt_notify_value - called with device_uuid=%s, feature_uuid=%s, type=%s, value=%.2f\n", device_uuid, feature_uuid, type, value);
   
   char payload_to_send[562];
-  DynamicJsonDocument inner_payload_msg(50);
+  JsonDocument inner_payload_msg;
   inner_payload_msg["value"] = value;
-  DynamicJsonDocument payloadMsg(512);
+  JsonDocument payloadMsg;
   payloadMsg["apiToken"] = API_TOKEN;
   payloadMsg["deviceUuid"] = device_uuid;
   payloadMsg["featureUuid"] = feature_uuid;
   payloadMsg["payload"] = inner_payload_msg;
-  serializeJson(payloadMsg, payload_to_send);
+  serializeJson(payloadMsg, payload_to_send, sizeof(payload_to_send));
   Serial.printf("mqtt_notify_value - payload_to_send=%s\n", payload_to_send);
 
+  char topic[128];
   if (strcmp(type, "online") == 0) {
-    size_t maxLength = 7 + strlen(device_uuid) + 10 + strlen(feature_uuid) + 1;
-    char topic[maxLength];
-    snprintf(topic, maxLength, "online/%s/features/%s", device_uuid, feature_uuid);
-    Serial.printf("mqtt_notify_value - topic=%s\n", topic);
-    mqtt_client.publish(topic, payload_to_send);
+    snprintf(topic, sizeof(topic), "online/%s/features/%s", device_uuid, feature_uuid);
   } else {
-    size_t maxLength = 8 + strlen(device_uuid) + 1 + strlen(type) + 1;
-    char topic[maxLength];
-    snprintf(topic, maxLength, "sensors/%s/%s", device_uuid, type);
-    Serial.printf("mqtt_notify_value - topic=%s\n", topic);
-    mqtt_client.publish(topic, payload_to_send);
+    snprintf(topic, sizeof(topic), "sensors/%s/%s", device_uuid, type);
+  }
+  Serial.printf("mqtt_notify_value - publishing topic=%s\n", topic);
+  if (!mqtt_client.publish(topic, payload_to_send)) {
+    Serial.printf("mqtt_notify_value - publish failed for topic=%s\n", topic);
   }
 }
 
 void mqtt_subscribe(const char* uuid, const char* command) {
   Serial.println("mqtt_subscribe - creating topic based on command...");
 
-  size_t maxLength = 8 + strlen(uuid) + 1 + strlen(command) + 1;
-  char topic[maxLength];
-  snprintf(topic, maxLength, "devices/%s/%s", uuid, command);
+  char topic[128];
+  snprintf(topic, sizeof(topic), "devices/%s/%s", uuid, command);
 
-  Serial.printf("mqtt_subscribe - subscribe topic=%s\n", topic);
+  Serial.printf("mqtt_subscribe - subscribing topic=%s\n", topic);
   mqtt_client.subscribe(topic);
 }

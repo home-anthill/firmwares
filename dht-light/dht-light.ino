@@ -22,7 +22,15 @@
 char mac_address[18];
 
 // private functions
-void mqtt_callback(char* topic, byte* payload, unsigned int length);
+void mqtt_callback(char* topic, uint8_t* payload, unsigned int length);
+bool get_feature_uuid_by_name(char* featureUuid, size_t max_len, const char* name);
+void read_dht_sensor_value();
+void read_light_sensor_value();
+void alarms_init();
+void alarms_enable();
+void alarms_disable();
+void init_sensors();
+JsonDocument buildFeatures();
 
 // alarms used to periodically read values from sensors
 AlarmID_t alarm_dht;
@@ -34,16 +42,22 @@ char saved_device_uuid[37];
 JsonDocument doc_features;
 JsonArray saved_features = doc_features.to<JsonArray>();
 
-void get_feature_uuid_by_name(char* featureUuid, const char* name) {
+bool get_feature_uuid_by_name(char* featureUuid, size_t max_len, const char* name) {
   for (int i = 0; i < saved_features.size(); i++) {
     JsonObject feature = saved_features[i];
     const char* uuidval = feature["uuid"];
     const char* nameval = feature["name"];
+    if (uuidval == nullptr || nameval == nullptr) {
+      continue;
+    }
     if (strcmp(name, nameval) == 0) {
-      strcpy(featureUuid, uuidval);
-      return;
+      strncpy(featureUuid, uuidval, max_len - 1);
+      featureUuid[max_len - 1] = '\0';
+      return true;
     }
   }
+  featureUuid[0] = '\0';
+  return false;
 }
 
 void read_dht_sensor_value() {
@@ -55,29 +69,38 @@ void read_dht_sensor_value() {
       Serial.printf("read_dht_sensor_value - temperature: %.2f °C\n", temp);
       const char* feature_name = "temperature";
       char temp_feature_uuid[37];
-      get_feature_uuid_by_name(temp_feature_uuid, feature_name);
-      mqtt_notify_value(saved_device_uuid, temp_feature_uuid, feature_name, temp);
+      if (get_feature_uuid_by_name(temp_feature_uuid, sizeof(temp_feature_uuid), feature_name)) {
+        mqtt_notify_value(saved_device_uuid, temp_feature_uuid, feature_name, temp);
+      } else {
+        Serial.println("read_dht_sensor_value - feature uuid not found for temperature");
+      }
   }
 
   float hum = dht_get_humidity();
   if (isnan(hum)) {
       Serial.println("read_dht_sensor_value - error reading humidity!");
   } else {
-      Serial.printf("read_dht_sensor_value - humidity: %.2f %\n", hum);
+      Serial.printf("read_dht_sensor_value - humidity: %.2f %%\n", hum);
       const char* feature_name = "humidity";
       char hum_feature_uuid[37];
-      get_feature_uuid_by_name(hum_feature_uuid, feature_name);
-      mqtt_notify_value(saved_device_uuid, hum_feature_uuid, feature_name, hum);
+      if (get_feature_uuid_by_name(hum_feature_uuid, sizeof(hum_feature_uuid), feature_name)) {
+        mqtt_notify_value(saved_device_uuid, hum_feature_uuid, feature_name, hum);
+      } else {
+        Serial.println("read_dht_sensor_value - feature uuid not found for humidity");
+      }
   }
 }
 
 void read_light_sensor_value() {
-  signed long value = light_get_value();
+  long value = light_get_value();
   Serial.printf("read_light_sensor_value - light: %ld lux\n", value);
   const char* feature_name = "light";
   char light_feature_uuid[37];
-  get_feature_uuid_by_name(light_feature_uuid, feature_name);
-  mqtt_notify_value(saved_device_uuid, light_feature_uuid, feature_name, value);
+  if (get_feature_uuid_by_name(light_feature_uuid, sizeof(light_feature_uuid), feature_name)) {
+    mqtt_notify_value(saved_device_uuid, light_feature_uuid, feature_name, value);
+  } else {
+    Serial.println("read_light_sensor_value - feature uuid not found for light");
+  }
 }
 
 void alarms_init() {
@@ -102,7 +125,7 @@ void init_sensors() {
   light_init_sensor();
 }
 
-void mqtt_callback(char* topic, byte* payload, unsigned int length) {
+void mqtt_callback(char* topic, uint8_t* payload, unsigned int length) {
   Serial.println("mqtt_callback - called");
   // not used for this sensor device
 }
@@ -173,7 +196,7 @@ void setup() {
   // 4. register to the server
   Serial.println("setup - registering this device...");
   JsonDocument features = buildFeatures();
-  int result = -999;
+  int result = -1;
   # if SSL==true
     result = register_secure_server(wifi_client, mac_address, features);
   # else 
@@ -226,9 +249,9 @@ void setup() {
 
 void loop() {
   // if 'saved_device_uuid' is not defined, it's an unregistered device
-  if (saved_device_uuid == NULL || strlen(saved_device_uuid) == 0) {
+  if (strlen(saved_device_uuid) == 0) {
     Serial.println("loop - saved_device_uuid NOT FOUND, cannot continue...");
-    delay(60000);
+    Alarm.delay(60000);
     return;
   }
 

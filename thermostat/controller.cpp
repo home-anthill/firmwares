@@ -22,8 +22,9 @@ float get_setpoint() {
   for (int i = 0; i < featureValues.size(); i++) {
     JsonObject featureValue = featureValues[i];
     const char* f_feature_name = featureValue["featureName"];
+    if (f_feature_name == nullptr) continue;
     float f_feature_value = featureValue["value"];
-    if(strcmp(f_feature_name, "setpoint") == 0) {
+    if (strcmp(f_feature_name, "setpoint") == 0) {
       return f_feature_value;
     }
   }
@@ -38,17 +39,18 @@ float get_tolerance() {
   for (int i = 0; i < featureValues.size(); i++) {
     JsonObject featureValue = featureValues[i];
     const char* f_feature_name = featureValue["featureName"];
+    if (f_feature_name == nullptr) continue;
     float f_feature_value = featureValue["value"];
-    if(strcmp(f_feature_name, "tolerance") == 0) {
+    if (strcmp(f_feature_name, "tolerance") == 0) {
       return f_feature_value;
     }
   }
   return 5; // default value
 }
 
-void set_configuration(char* saved_device_uuid, JsonArray saved_features, byte* payload) {  
-  StaticJsonDocument<1024> doc;
-  DeserializationError error = deserializeJson(doc, payload);
+void set_configuration(char* saved_device_uuid, JsonArray saved_features, uint8_t* payload, unsigned int length) {  
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, payload, length);
   if (error) {
     Serial.print("set_setpoint - deserializeJson() failed: ");
     Serial.println(error.f_str());
@@ -74,13 +76,17 @@ void set_configuration(char* saved_device_uuid, JsonArray saved_features, byte* 
     Serial.printf("set_configuration - f_feature_name = %s\n", f_feature_name);
     Serial.printf("set_configuration - f_feature_value = %.2f\n", f_feature_value);
     Serial.printf("---------------------------\n");
-    
+
     // validate infos
+    if (f_model == nullptr || f_api_token == nullptr || f_feature_name == nullptr) {
+      Serial.println("set_configuration - error missing required fields in payload");
+      return;
+    }
     if (strcmp(f_model, MODEL) != 0 || strcmp(f_api_token, API_TOKEN) != 0) {
       Serial.println("set_configuration - error model and api_token doesn't match");
       return;
     }
-    if(strcmp(f_feature_name, "setpoint") == 0) {
+    if (strcmp(f_feature_name, "setpoint") == 0) {
       Serial.printf("set_configuration - setpoint - f_feature_value: %.2f\n", f_feature_value);
       if (f_feature_value < TEMP_MIN || f_feature_value > TEMP_MAX) {
         Serial.printf("set_configuration - cannot set value, because setpoint is out of range. setpoint must be >= %d and <= %d\n", TEMP_MIN, TEMP_MAX);

@@ -1,3 +1,5 @@
+#pragma once
+
 void airquality_init_sensor();
 
 bool airquality_has_newvalue();

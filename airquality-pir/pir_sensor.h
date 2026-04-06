@@ -1,3 +1,5 @@
+#pragma once
+
 void pir_init_sensor();
 
 int pir_get_value();

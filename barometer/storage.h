@@ -1,3 +1,5 @@
+#pragma once
+
 #include <ArduinoJson.h>
 
 size_t storage_get_uuid(char* saved_uuid);

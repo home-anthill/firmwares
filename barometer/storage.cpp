@@ -25,10 +25,19 @@ size_t storage_set_uuid(const char* uuid) {
 void storage_get_features(JsonArray features) {
   preferences.begin("device", true);
   String val = preferences.getString("features", "");
+  if (val.length() == 0) {
+    preferences.end();
+    return;
+  }
   JsonDocument doc;
-  deserializeJson(doc, val);
+  DeserializationError err = deserializeJson(doc, val);
+  if (err) {
+    Serial.printf("storage_get_features - deserializeJson failed: %s\n", err.c_str());
+    preferences.end();
+    return;
+  }
   JsonArray values = doc.as<JsonArray>();
-  for (int i = 0; i < values.size(); i++) {
+  for (size_t i = 0; i < values.size(); i++) {
     features.add(values[i]);
   }
   preferences.end();
@@ -36,10 +45,10 @@ void storage_get_features(JsonArray features) {
 
 size_t storage_set_features(JsonArray features) {
   preferences.begin("device", false);
-  size_t len = preferences.putInt("numfeatures", features.size());
+  preferences.putInt("numfeatures", features.size());
   String output;
-  size_t written = serializeJson(features, output);
-  preferences.putString("features", output.c_str());
+  serializeJson(features, output);
+  size_t len = preferences.putString("features", output.c_str());
   preferences.end();
   return len;
 }

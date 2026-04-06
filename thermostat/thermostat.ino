@@ -28,7 +28,14 @@ char mac_address[18];
 AlarmID_t alarm_temp;
 
 // private functions
-void mqtt_callback(char* topic, byte* payload, unsigned int length);
+void mqtt_callback(char* topic, uint8_t* payload, unsigned int length);
+bool get_feature_uuid_by_name(char* featureUuid, size_t max_len, const char* name);
+JsonDocument buildFeatures();
+void read_temp_sensor_value();
+void alarms_init();
+void alarms_enable();
+void alarms_disable();
+void init_sensors();
 
 // device_uuid global variable
 char saved_device_uuid[37];
@@ -43,21 +50,27 @@ JsonArray saved_features = doc_features.to<JsonArray>();
 #define PUMP 36
 
 
-void get_feature_uuid_by_name(char* featureUuid, const char* name) {
+bool get_feature_uuid_by_name(char* featureUuid, size_t max_len, const char* name) {
   for (int i = 0; i < saved_features.size(); i++) {
     JsonObject feature = saved_features[i];
     const char* uuidval = feature["uuid"];
     const char* nameval = feature["name"];
+    if (uuidval == nullptr || nameval == nullptr) {
+      continue;
+    }
     if (strcmp(name, nameval) == 0) {
-      strcpy(featureUuid, uuidval);
-      return;
+      strncpy(featureUuid, uuidval, max_len - 1);
+      featureUuid[max_len - 1] = '\0';
+      return true;
     }
   }
+  featureUuid[0] = '\0';
+  return false;
 }
 
-void mqtt_callback(char* topic, byte* payload, unsigned int length) {
+void mqtt_callback(char* topic, uint8_t* payload, unsigned int length) {
   Serial.println("mqtt_callback - called");
-  set_configuration(saved_device_uuid, saved_features, payload);
+  set_configuration(saved_device_uuid, saved_features, payload, length);
 }
 
 JsonDocument buildFeatures() {
@@ -99,8 +112,11 @@ void read_temp_sensor_value() {
       if (mqtt_client.connected()) {
         const char* feature_name = "temperature";
         char temp_feature_uuid[37];
-        get_feature_uuid_by_name(temp_feature_uuid, feature_name);
-        mqtt_notify_value(saved_device_uuid, temp_feature_uuid, feature_name, temp);
+        if (get_feature_uuid_by_name(temp_feature_uuid, sizeof(temp_feature_uuid), feature_name)) {
+          mqtt_notify_value(saved_device_uuid, temp_feature_uuid, feature_name, temp);
+        } else {
+          Serial.println("read_temp_sensor_value - feature uuid not found for temperature");
+        }
       }
 
       float setpoint = get_setpoint();
@@ -180,10 +196,6 @@ void setup() {
   Serial.println("setup - init alarms (still disabled)...");
   alarms_init();
 
-  // 4. starts alarms to read sensors values
-  Serial.println("setup - enable alarms");
-  alarms_enable();
-
   // main thermostat output (heat)
   pinMode(HEAT, OUTPUT);
   // main thermostat output (cold)
@@ -192,6 +204,10 @@ void setup() {
   pinMode(FAN, OUTPUT);
   // optional pump output
   pinMode(PUMP, OUTPUT);
+
+  // 4. starts alarms to read sensors values
+  Serial.println("setup - enable alarms");
+  alarms_enable();
 
   // 5. prepare wifi_client
   //    If SSL is enabled, add root ca to wifi_client to be used for secure connections
@@ -215,7 +231,7 @@ void setup() {
   // 8. register to the server
   Serial.println("setup - registering this device...");
   JsonDocument features = buildFeatures();
-  int result = -999;
+  int result = -1;
   # if SSL==true
     result = register_secure_server(wifi_client, mac_address, features);
   # else 
@@ -259,7 +275,7 @@ void setup() {
 
 void loop() {
   // if 'saved_device_uuid' is not defined, it's an unregistered device
-  if (saved_device_uuid == NULL || strlen(saved_device_uuid) == 0) {
+  if (strlen(saved_device_uuid) == 0) {
     Serial.println("loop - saved_device_uuid NOT FOUND, cannot continue...");
     Alarm.delay(60000);
     return;

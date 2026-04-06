@@ -22,6 +22,6 @@ void light_init_sensor() {
   Serial.println("light_init_sensor - sensor initialized successfully!");
 }
 
-signed long light_get_value() {
+long light_get_value() {
   return TSL2561.readVisibleLux();
 }

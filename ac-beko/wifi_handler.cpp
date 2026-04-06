@@ -72,7 +72,7 @@ void wifi_connect(char* mac_address) {
     delay(1000);
     Serial.print(".");
     wifi_retries++;
-    // after 100 retries (100 * 1 = 300 seconds) without success, reboot this device
+    // after 300 retries (300 * 1 = 300 seconds) without success, reboot this device
     if (wifi_retries > 300) {
       ESP.restart();
     }
@@ -83,8 +83,9 @@ void wifi_connect(char* mac_address) {
   IPAddress ip_address = WiFi.localIP();
   Serial.printf("wifi_connect - ip_address: %s\n", ip_address.toString());
 
-  const char* mac = WiFi.macAddress().c_str();
-  strcpy(mac_address, mac);
+  String mac_str = WiFi.macAddress();
+  strncpy(mac_address, mac_str.c_str(), 18 - 1);
+  mac_address[18 - 1] = '\0';
   Serial.printf("wifi_connect - mac_address: %s\n", mac_address);
 }
 

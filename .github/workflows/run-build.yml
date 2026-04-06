@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-esp32-board-3xx:
+  build:
     strategy:
         matrix:
           esp-devices: [esp32, esp32s2, esp32s3]
@@ -48,12 +48,12 @@ jobs:
           arduino-cli core update-index
           arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
           arduino-cli core update-index
-          arduino-cli core install esp32:esp32@3.3.2
+          arduino-cli core install esp32:esp32@3.3.6
 
       - name: Install libraries
         run: |
           arduino-cli lib update-index
-
+ 
           # common libs
           arduino-cli lib install "ArduinoJson"@7.4.2
           arduino-cli lib install "HttpClient"@2.2.0
@@ -70,6 +70,9 @@ jobs:
           arduino-cli lib install "Grove - Air quality sensor"@1.0.2
           arduino-cli lib install "Grove - Digital Light Sensor"@2.0.0
 
+          # specific libs for devices
+          arduino-cli lib install "IRremoteESP8266"@2.9.0
+
       # to get a list of FQBN you can run: `arduino-cli board listall`
       - name: Building firmwares for ${{ matrix.esp-devices }}
         run: |
@@ -79,6 +82,9 @@ jobs:
           cp secrets-template barometer/secrets.h
           cp secrets-template dht-light/secrets.h
           cp secrets-template power-outage/secrets.h
+          cp secrets-template ac-beko/secrets.h
+          cp secrets-template ac-lg/secrets.h
+          cp secrets-template thermostat/secrets.h
 
           # build
           cd airquality-pir
@@ -92,67 +98,13 @@ jobs:
           cd ..
           cd power-outage
           arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./power-outage.ino
-  
-  # air conditioner controllers are built with esp32 board support 2.0.17 and not 3
-  build-esp32-board-2xx:
-    strategy:
-        matrix:
-          # esp32s2 is not supported for air conditioner controllers
-          # more info at https://github.com/crankyoldgit/IRremoteESP8266/issues/1922
-          esp-devices: [esp32, esp32s3]
-
-    name: Run and test
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Install Arduino CLI
-        uses: arduino/setup-arduino-cli@v2
-
-      - name: Init arduino-cli.yaml config file and apply custom configs
-        run: |
-          # init with defaults
-          arduino-cli config init
-
-          # enable_unsafe_install to be able to install libraries via git
-          arduino-cli config set library.enable_unsafe_install true
-
-      - name: Install Board support
-        run: |
-          arduino-cli core update-index
-          arduino-cli config add board_manager.additional_urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
-          arduino-cli core update-index
-          arduino-cli core install esp32:esp32@2.0.17
-
-      - name: Install libraries
-        run: |
-          arduino-cli lib update-index
-
-          # common libs
-          arduino-cli lib install "ArduinoJson"@7.4.2
-          arduino-cli lib install "HttpClient"@2.2.0
-          arduino-cli lib install "PubSubClient"@2.8.0
-
-          # specific libs for devices
-          arduino-cli lib install "IRremoteESP8266"@2.8.6
-
-      # to get a list of FQBN you can run: `arduino-cli board listall`
-      - name: Building firmwares for ${{ matrix.esp-devices }}
-        run: |
-          # Prepare sensor.h files based on `secrets-template`, because
-          # we don't need real config files to build all firmwares in CI.
-          cp secrets-template ac-beko/secrets.h
-          cp secrets-template ac-lg/secrets.h
-
-          # build ac-beko
+          cd ..
           cd ac-beko
           arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./ac-beko.ino
           cd ..
-
-          # build ac-lg
           cd ac-lg
           arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./ac-lg.ino
+          cd ..
+          cd thermostat
+          arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./thermostat.ino
           cd ..

@@ -196,7 +196,15 @@ void loop() {
     mqtt_connect(saved_device_uuid);
   }
 
-  mqtt_client.loop();
+  // mqtt_client.loop() returns false when the connection is broken.
+  // For controller firmwares that never publish, this is the only way to detect
+  // a stale TCP socket after the broker restarts (there is no publish failure
+  // to trigger an explicit disconnect like there is in sensor firmwares).
+  if (!mqtt_client.loop()) {
+    Serial.println("loop - mqtt_client.loop() returned false, forcing disconnect to trigger reconnect");
+    mqtt_client.disconnect();
+  }
 
-  delay(1000);
+  // 100 ms keeps MQTT responsive; bare delay() is correct here (no TimeAlarms)
+  delay(100);
 }

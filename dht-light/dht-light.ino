@@ -270,7 +270,15 @@ void loop() {
     alarms_enable();
   }
 
-  mqtt_client.loop();
+  // Defense in depth: mqtt_client.loop() returns false if the connection is
+  // broken (e.g. broker restarted). For sensors, publish failure already
+  // triggers disconnect(), but that only fires at the next alarm tick (30-45 s).
+  // Checking here catches stale connections via PINGREQ timeout (~15 s)
+  // without waiting for the next publish.
+  if (!mqtt_client.loop()) {
+    Serial.println("loop - mqtt_client.loop() returned false, forcing disconnect to trigger reconnect");
+    mqtt_client.disconnect();
+  }
 
-  Alarm.delay(1000);
+  Alarm.delay(100);
 }

@@ -50,24 +50,7 @@ screen /dev/ttyUSB0 115200   # Ctrl+A, Ctrl+\ to exit
 
 ## Build
 
-Firmwares are built using **Arduino CLI** (not PlatformIO). There is no Makefile — compilation is done directly via `arduino-cli compile`.
-
-```bash
-# Install ESP32 board support
-arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
-arduino-cli core update-index
-arduino-cli core install esp32:esp32@3.3.6
-
-# Install required libraries (see .github/workflows/run-build.yml for exact versions)
-arduino-cli lib install "ArduinoJson"@7.4.2 "PubSubClient"@2.8.0 "TimeAlarms"@1.5.0 "Time"@1.6.1 \
-  "Adafruit Unified Sensor"@1.1.15 "DHT sensor library"@1.4.6 "Grove - Digital Light Sensor"@2.0.0 \
-  "HttpClient"@2.2.0 "XENSIV Digital Pressure Sensor"@1.0.2 "Grove - Air quality sensor"@1.0.2 \
-  "IRremoteESP8266"@2.9.0
-
-# Build a specific firmware (from its directory)
-cd dht-light
-arduino-cli compile --fqbn esp32:esp32:esp32 ./dht-light.ino
-```
+Firmwares are built using **Arduino CLI** (not PlatformIO). There is no Makefile — compilation is done directly via `arduino-cli compile`. See **Quick Start** above for board setup, library install commands, and the compile command pattern.
 
 Each firmware directory must contain a `secrets.h` file (gitignored). Copy `secrets-template` to `<firmware>/secrets.h` and fill in real values for development, or use it as-is for CI builds.
 
@@ -137,20 +120,35 @@ There are no unit tests — all testing is integration-based on real hardware:
 - Drives physical GPIO outputs (HEAT, COLD, FAN, PUMP) using hysteretic control logic
 - Has an OLED display module (SSD1306 128x32 via I2C) — `display.cpp/h`
 - Extended `storage.cpp` with `storage_get_feature_values()` / `storage_set_feature_values()` for persisting controller state (`"featureValues"` key in Preferences)
-- Alarm runs continuously (not disabled on WiFi loss, unlike sensor firmwares)
+- **Offline-first design**: alarms are enabled in `setup()` *before* any WiFi attempt; the thermostat controls temperature immediately on boot regardless of network state
+- WiFi/MQTT are managed by a non-blocking **state machine** (`handle_connectivity()` in `thermostat.ino`) — one step per `loop()` iteration — so `Alarm.delay()` is always reached and the control loop never stalls
+- Connectivity state machine phases and attempt budgets:
+
+  | State | Action | Limit |
+  |---|---|---|
+  | `CONN_WIFI_WAITING` | Poll `WiFi.status()` each tick | 30 polls ≈ 30 s |
+  | `CONN_REGISTERING` | One HTTP POST attempt every 10 s | 3 attempts |
+  | `CONN_MQTT_TRYING` | One `mqtt_try_connect_once()` every 5 s | 10 attempts |
+  | `CONN_ONLINE` | Health check only | — |
+  | `CONN_COOLDOWN` | Do nothing, then `ESP.restart()` | 43 200 s (12 h) |
+
+  Exhausting any phase's budget transitions to `CONN_COOLDOWN`, capping reboots to ~2/day.
+- Thermostat-specific `wifi_handler.cpp` adds `wifi_start_connect()` (non-blocking `WiFi.begin()`) and `wifi_populate_mac()`; `mqtt_handler.cpp` adds `mqtt_try_connect_once()` (single attempt, no retry loop); `registration.cpp` adds `register_secure_server_once()` / `register_insecure_server_once()` (single HTTP attempt, no delay, no restart) — these call a private `register_once_impl()` helper; the blocking `register_secure_server()` / `register_insecure_server()` variants remain for other firmwares
 
 ### Shared modules (identical across all firmwares)
 
 - **`wifi_handler.cpp/h`** — WiFi connection/reconnection. Embeds a CA certificate for TLS. Exposes a global `wifi_client` (either `WiFiClientSecure` or `WiFiClient` based on the `SSL` define).
 - **`registration.cpp/h`** — HTTP POST to `/admission/register`. Handles first-boot (HTTP 200) and already-registered (HTTP 409). Stores device UUID and features in Preferences on success.
-- **`mqtt_handler.cpp/h`** — MQTT connection and publishing via `PubSubClient`. Publishes to `sensors/<device_uuid>/<type>`, subscribes to `devices/<uuid>/values`.
+- **`mqtt_handler.cpp/h`** — MQTT connection and publishing via `PubSubClient`. Publishes to `sensors/<device_uuid>/<type>`, subscribes to `devices/<uuid>/values`. Socket timeout is set to 15 s (`setSocketTimeout`) to bound TLS hangs. On publish failure, `mqtt_client.disconnect()` is called explicitly so that `mqtt_client.connected()` returns `false` on the next `loop()` iteration and the reconnect path is entered (a stale TCP socket would otherwise keep `connected()` returning `true` indefinitely).
 - **`storage.cpp/h`** — Persistent key-value storage using ESP32 `Preferences` library. Stores device UUID (`"uuid"` key) and features array (`"features"` key) under namespace `"device"`.
 
 ### Key flow
 
 1. `setup()`: init WiFi (with optional TLS) → register device via HTTP → init MQTT → create sensor alarms (disabled) or init IR hardware
+   - **Thermostat exception**: alarms are enabled *before* WiFi; WiFi is kicked off non-blocking; registration/MQTT happen lazily via `handle_connectivity()` in `loop()`
 2. `loop()`: check WiFi/MQTT connectivity (reconnect if needed) → MQTT reconnect enables alarms → alarms periodically read sensors and publish via MQTT
 3. Both WiFi and MQTT have retry limits that trigger `ESP.restart()` after prolonged failures
+   - **Thermostat exception**: instead of unbounded retries, a state machine caps each burst then enters a 12 h cooldown; `ESP.restart()` fires only when cooldown expires (~2x/day)
 
 ### Registration protocol
 
@@ -194,7 +192,8 @@ GitHub Actions workflow (`.github/workflows/run-build.yml`) builds all 7 firmwar
 - Function names use `snake_case` with module prefix (e.g., `mqtt_connect`, `dht_get_temperature`)
 - Global variables are used for shared state (e.g., `saved_device_uuid`, `mqtt_client`, `wifi_client`)
 - **ArduinoJson v7**: use `JsonDocument` — `StaticJsonDocument` and `DynamicJsonDocument` are deprecated aliases in v7 and must not be introduced
-- **`Alarm.delay()` vs `delay()`**: sensor firmwares must use `Alarm.delay(ms)` in `loop()` instead of bare `delay()` so that TimeAlarms can fire; controller firmwares (`ac-beko`, `ac-lg`) use bare `delay()` since they have no alarms
+- **`Alarm.delay()` vs `delay()`**: sensor firmwares (and thermostat) must use `Alarm.delay(100)` in `loop()` instead of bare `delay()` so that TimeAlarms can fire; controller firmwares (`ac-beko`, `ac-lg`) use bare `delay(100)` since they have no alarms. The 100 ms value gives fast MQTT polling (10× per second) without affecting alarm fire times (which are based on elapsed time, not iteration count).
+- **`mqtt_client.loop()` return check**: all firmwares check the return value of `mqtt_client.loop()` and call `mqtt_client.disconnect()` on `false`. For controller firmwares (`ac-beko`, `ac-lg`) this is the *only* stale-connection detection path (they never publish). For sensor firmwares it is secondary defense: publish failure already triggers `disconnect()` at the next alarm tick (30–60 s), but the `loop()` return catches stale connections via PINGREQ timeout (~15 s) without waiting for the next publish.
 
 ## Device-Specific Notes
 

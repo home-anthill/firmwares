@@ -21,6 +21,7 @@
 #endif
 
 // private local functions
+int register_once_impl(WiFiClient& wifi_client, const char* mac_address, const JsonDocument& features);
 int register_server(WiFiClient& wifi_client, const char* mac_address, const JsonDocument& features);
 void get_register_url(char** register_url);
 void build_register_payload(char* register_payload, size_t max_len, const char* mac_address, const JsonDocument& features);
@@ -33,42 +34,126 @@ int register_insecure_server(WiFiClient& wifi_client, const char* mac_address, c
   return register_server(wifi_client, mac_address, features);
 }
 
+int register_secure_server_once(WiFiClientSecure& wifi_client, const char* mac_address, const JsonDocument& features) {
+  return register_once_impl(wifi_client, mac_address, features);
+}
+
+int register_insecure_server_once(WiFiClient& wifi_client, const char* mac_address, const JsonDocument& features) {
+  return register_once_impl(wifi_client, mac_address, features);
+}
+
 /*
-* register_server function 
-* returns an uint:
+* register_once_impl — one HTTP POST attempt, no retries, no delays, no ESP.restart().
+* Callers are responsible for retry/backoff logic.
+* Returns same codes as register_server:
 *  0 => registered or already registered successfully
-*  1 => cannot register, because http status code is not 200 (ok) or 209 (already registered)
-*  2 => register success, but cannot save the response UUID in preferences
-*  3 => cannot deserialize register JSON response payload (probably malformed or too big)
-*  4 => response doesn't match request device (either mac, manufacturer or model are different)
+*  1 => network error or unexpected HTTP status
+*  2 => register success, but cannot save UUID/features in preferences
+*  3 => cannot deserialize register JSON response
+*  4 => response doesn't match request device
+*/
+int register_once_impl(WiFiClient& wifi_client, const char* mac_address, const JsonDocument& features) {
+  HTTPClient http;
+
+  char* register_url;
+  get_register_url(&register_url);
+  if (register_url == nullptr) {
+    Serial.println("register_once_impl - error: failed to allocate register_url");
+    return 1;
+  }
+  Serial.printf("register_once_impl - register_url = %s\n", register_url);
+
+  http.begin(wifi_client, register_url);
+  free(register_url);
+  http.addHeader("Content-Type", "application/json; charset=utf-8");
+
+  char register_payload[2048];
+  build_register_payload(register_payload, sizeof(register_payload), mac_address, features);
+  Serial.printf("register_once_impl - register with payload: %s\n", register_payload);
+
+  int http_response_code = http.POST(register_payload);
+  if (http_response_code <= 0) {
+    Serial.printf("register_once_impl - HTTP error: %d\n", http_response_code);
+    http.end();
+    return 1;
+  }
+  Serial.printf("register_once_impl - http_response_code = %d\n", http_response_code);
+
+  if (http_response_code != HTTP_CODE_OK && http_response_code != HTTP_CODE_CONFLICT) {
+    Serial.println("register_once_impl - error bad http_response_code! Cannot register this device");
+    http.end();
+    return 1;
+  }
+
+  if (http_response_code == HTTP_CODE_OK) {
+    Serial.println("register_once_impl - HTTP_CODE_OK");
+    JsonDocument static_doc;
+    DeserializationError err = deserializeJson(static_doc, http.getStream());
+    if (!err) {
+      Serial.println("register_once_impl - deserialization succeeded!");
+      serializeJsonPretty(static_doc, Serial);
+      Serial.println();
+      const char* uuid_value = static_doc["uuid"] | static_cast<const char*>(nullptr);
+      const char* mac_value = static_doc["mac"] | static_cast<const char*>(nullptr);
+      const char* manufacturer_value = static_doc["manufacturer"] | static_cast<const char*>(nullptr);
+      const char* model_value = static_doc["model"] | static_cast<const char*>(nullptr);
+      Serial.printf("register_once_impl - uuid_value: %s\n", uuid_value);
+      Serial.printf("register_once_impl - mac_value: %s\n", mac_value);
+      Serial.printf("register_once_impl - manufacturer_value: %s\n", manufacturer_value);
+      Serial.printf("register_once_impl - model_value: %s\n", model_value);
+
+      if (uuid_value == nullptr || mac_value == nullptr || manufacturer_value == nullptr || model_value == nullptr) {
+        Serial.println("register_once_impl - error missing fields in response JSON");
+        return 3;
+      }
+
+      if (strcmp(mac_value, mac_address) != 0 || strcmp(manufacturer_value, MANUFACTURER) != 0 || strcmp(model_value, MODEL) != 0) {
+        Serial.println("register_once_impl - error request and response data don't match");
+        return 4;
+      }
+
+      JsonArray features_arr = static_doc["features"].as<JsonArray>();
+      for (size_t i = 0; i < features_arr.size(); i++) {
+        JsonObject feature = features_arr[i];
+        Serial.printf("\n---------------------------\n");
+        Serial.printf("register_once_impl - f_uuid_value = %s\n", (const char*)feature["uuid"]);
+        Serial.printf("register_once_impl - f_type_value = %s\n", (const char*)feature["type"]);
+        Serial.printf("register_once_impl - f_name_value = %s\n", (const char*)feature["name"]);
+        Serial.printf("---------------------------\n");
+      }
+
+      size_t len = storage_set_uuid(uuid_value);
+      if (len != strlen(uuid_value)) {
+        Serial.println("register_once_impl - Cannot SAVE device UUID in Preferences");
+        return 2;
+      }
+      len = storage_set_features(static_doc["features"].as<JsonArray>());
+      if (len == 0) {
+        Serial.println("register_once_impl - Cannot SAVE features array in Preferences");
+        return 2;
+      }
+    } else {
+      Serial.println("register_once_impl - cannot deserialize register JSON payload");
+      return 3;
+    }
+  } else if (http_response_code == HTTP_CODE_CONFLICT) {
+    Serial.println("register_once_impl - HTTP_CODE_CONFLICT - already registered");
+  }
+  return 0;
+}
+
+/*
+* register_server — wraps register_once_impl with retry/backoff (blocking).
+* After max_register_retries network failures it calls ESP.restart().
+* Returns same codes as register_once_impl.
 */
 int register_server(WiFiClient& wifi_client, const char* mac_address, const JsonDocument& features) {
-  HTTPClient http;
-  int http_response_code = 0;
   int register_retries = 0;
   const int max_register_retries = 10;
 
-  do {
-    char* register_url;
-    get_register_url(&register_url);
-    if (register_url == nullptr) {
-      Serial.println("register_server - error: failed to allocate register_url");
-      return 1;
-    }
-    Serial.printf("register_server - register_url = %s\n", register_url);
-
-    http.begin(wifi_client, register_url);
-    free(register_url);
-    http.addHeader("Content-Type", "application/json; charset=utf-8");
-
-    char register_payload[2048];
-    build_register_payload(register_payload, sizeof(register_payload), mac_address, features);
-    Serial.printf("register_server - register with payload: %s\n", register_payload);
-
-    http_response_code = http.POST(register_payload);
-    if (http_response_code <= 0) {
-      Serial.printf("register_server - error on sending POST with http_response_code = %d\n", http_response_code);
-      http.end();
+  while (true) {
+    int result = register_once_impl(wifi_client, mac_address, features);
+    if (result == 1) {
       register_retries++;
       if (register_retries >= max_register_retries) {
         Serial.println("register_server - max retries reached, rebooting...");
@@ -78,90 +163,8 @@ int register_server(WiFiClient& wifi_client, const char* mac_address, const Json
       delay(60000);
       continue;
     }
-    break;
-  } while (true);
-  Serial.printf("register_server - http_response_code = %d\n", http_response_code);
-
-  if (http_response_code != HTTP_CODE_OK && http_response_code != HTTP_CODE_CONFLICT) {
-    Serial.println("register_server - error bad http_response_code! Cannot register this device");
-    return 1;
+    return result;
   }
-
-  if (http_response_code == HTTP_CODE_OK) {
-    Serial.println("register_server - HTTP_CODE_OK");
-    JsonDocument static_doc;
-    DeserializationError err = deserializeJson(static_doc, http.getStream());
-    // There is no need to check for specific reasons,
-    // because err evaluates to true/false in this case,
-    // as recommended by the developer of ArduinoJson
-    if (!err) {
-      Serial.println("register_server - deserialization succeeded!");
-      serializeJsonPretty(static_doc, Serial);
-      Serial.println();
-      const char* uuid_value = static_doc["uuid"] | static_cast<const char*>(nullptr);
-      const char* mac_value = static_doc["mac"] | static_cast<const char*>(nullptr);
-      const char* manufacturer_value = static_doc["manufacturer"] | static_cast<const char*>(nullptr);
-      const char* model_value = static_doc["model"] | static_cast<const char*>(nullptr);
-      Serial.printf("register_server - uuid_value: %s\n", uuid_value);
-      Serial.printf("register_server - mac_value: %s\n", mac_value);
-      Serial.printf("register_server - manufacturer_value: %s\n", manufacturer_value);
-      Serial.printf("register_server - model_value: %s\n", model_value);
-
-      if (uuid_value == nullptr || mac_value == nullptr || manufacturer_value == nullptr || model_value == nullptr) {
-        Serial.println("register_server - error missing fields in response JSON");
-        return 3;
-      }
-
-      if (strcmp(mac_value, mac_address) != 0 || strcmp(manufacturer_value, MANUFACTURER) != 0 || strcmp(model_value, MODEL) != 0) {
-        Serial.println("register_server - error request and response data don't match");
-        return 4;
-      }
-
-      // print all features on terminal (debug purposes)
-      JsonArray features_arr = static_doc["features"].as<JsonArray>();
-      for (size_t i = 0; i < features_arr.size(); i++) {
-        JsonObject feature = features_arr[i];
-        const char* f_uuid_value = feature["uuid"];
-        const char* f_type_value = feature["type"];
-        const char* f_name_value = feature["name"];
-        bool f_enable_value = feature["enable"];
-        int f_order_value = feature["order"];
-        const char* f_unit_value = feature["unit"];
-        Serial.printf("\n---------------------------\n");
-        Serial.printf("register_server - f_uuid_value = %s\n", f_uuid_value);
-        Serial.printf("register_server - f_type_value = %s\n", f_type_value);
-        Serial.printf("register_server - f_name_value = %s\n", f_name_value);
-        Serial.printf("register_server - f_enable_value = %d\n", f_enable_value);
-        Serial.printf("register_server - f_order_value = %d\n", f_order_value);
-        Serial.printf("register_server - f_unit_value = %s\n", f_unit_value);
-        Serial.printf("---------------------------\n");
-      }
-
-      // save device UUID in Preferences
-      size_t len = storage_set_uuid(uuid_value);
-      if (len != strlen(uuid_value)) {
-        Serial.println("************* ERROR **************");
-        Serial.println("register_server - Cannot SAVE device UUID in Preferences");
-        Serial.println("**********************************");
-        return 2;
-      }
-      // save features array in Preferences
-      len = storage_set_features(static_doc["features"].as<JsonArray>());
-      if (len == 0) {
-        Serial.println("************* ERROR **************");
-        Serial.println("register_server - Cannot SAVE features array in Preferences");
-        Serial.println("**********************************");
-        return 2;
-      }
-    } else {
-      Serial.println("register_server - cannot deserialize register JSON payload");
-      return 3;
-    }
-  } else if (http_response_code == HTTP_CODE_CONFLICT) {
-    // this is not an error, it will appear every reboot after the first registration
-    Serial.println("register_server - HTTP_CODE_CONFLICT - already registered");
-  }
-  return 0; // OK - registered without errors
 }
 
 void get_register_url(char** register_url) {

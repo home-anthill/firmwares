@@ -21,6 +21,8 @@ void mqtt_init(Client& wifi_client, std::function<void (char *, uint8_t *, unsig
   mqtt_client.setClient(wifi_client);
   mqtt_client.setBufferSize(4096);
   mqtt_client.setCallback(callback);
+  // bound TLS/TCP handshake so a partially-reachable broker cannot hang forever
+  mqtt_client.setSocketTimeout(15);
 }
 
 void mqtt_connect(const char* uuid) { 
@@ -79,7 +81,12 @@ void mqtt_notify_value(const char* device_uuid, const char* feature_uuid, const 
   }
   Serial.printf("mqtt_notify_value - publishing topic=%s\n", topic);
   if (!mqtt_client.publish(topic, payload_to_send)) {
-    Serial.printf("mqtt_notify_value - publish failed for topic=%s\n", topic);
+    Serial.printf("mqtt_notify_value - publish failed for topic=%s, forcing disconnect to trigger reconnect\n", topic);
+    // Explicitly disconnect so mqtt_client.connected() returns false and the
+    // main loop re-enters mqtt_connect() on the next iteration.  Without this,
+    // a stale TCP socket can keep connected() returning true indefinitely while
+    // all publishes silently fail.
+    mqtt_client.disconnect();
   }
 }
 
@@ -91,4 +98,26 @@ void mqtt_subscribe(const char* uuid, const char* command) {
 
   Serial.printf("mqtt_subscribe - subscribing topic=%s\n", topic);
   mqtt_client.subscribe(topic);
+}
+
+bool mqtt_try_connect_once(const char* uuid) {
+  Serial.printf("mqtt_try_connect_once - attempting with uuid=%s\n", uuid);
+
+  bool connected = false;
+  # if MQTT_AUTH==true
+    const char* mqtt_username = MQTT_USERNAME;
+    const char* mqtt_password = MQTT_PASSWORD;
+    connected = mqtt_client.connect(uuid, mqtt_username, mqtt_password);
+  # else
+    connected = mqtt_client.connect(uuid);
+  # endif
+
+  if (connected) {
+    Serial.println("mqtt_try_connect_once - connected, subscribing...");
+    mqtt_retries = 0;
+    mqtt_subscribe(uuid, "values");
+  } else {
+    Serial.printf("mqtt_try_connect_once - failed, state=%d\n", mqtt_client.state());
+  }
+  return connected;
 }

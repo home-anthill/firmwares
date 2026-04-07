@@ -103,8 +103,8 @@ void ir_send_command(char* topic, uint8_t* payload, unsigned int length) {
     }
     if (strcmp(featureNameval, "setpoint") == 0) {
       if (valueval < TEMP_MIN || valueval > TEMP_MAX) {
-        Serial.printf("ir_send_command - cannot set value, because temperature is out of range. Temperature must be >= %d and <= %d\n", TEMP_MIN, TEMP_MAX);
-        return;
+        Serial.printf("ir_send_command - skipping setpoint: out of range (%.2f, must be %d-%d)\n", valueval, TEMP_MIN, TEMP_MAX);
+        continue;
       }
       Serial.println("ir_send_command - setting temperature");
       ac.setTemp(valueval);

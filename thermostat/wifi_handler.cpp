@@ -98,3 +98,15 @@ void wifi_reconnect(char* mac_address) {
 int wifi_get_status() {
   return WiFi.status();
 }
+
+void wifi_start_connect() {
+  Serial.println("wifi_start_connect - called");
+  WiFi.begin(ssid, password);
+}
+
+void wifi_populate_mac(char* mac_address) {
+  String mac_str = WiFi.macAddress();
+  strncpy(mac_address, mac_str.c_str(), 18 - 1);
+  mac_address[18 - 1] = '\0';
+  Serial.printf("wifi_populate_mac - mac_address: %s\n", mac_address);
+}

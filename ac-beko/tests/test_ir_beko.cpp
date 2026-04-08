@@ -10,7 +10,7 @@
 #include "ir_Coolix.h"
 
 #include <ArduinoJson.h>
-#include "secrets.h"  // provides API_TOKEN, MODEL
+#include "secrets.h"
 
 // NOTE: ir_beko.h and ir_beko.h (the mock) differ only in case.  On macOS's
 // case-insensitive filesystem they resolve to the same file, so including
@@ -24,18 +24,25 @@ void ir_send_command(char* topic, uint8_t* payload, unsigned int length);
 // Helpers
 // ---------------------------------------------------------------------------
 
-// Build a single-entry JSON array payload with the given featureName/value.
-static std::string validPayload(const char* featureName, const char* valueStr) {
-  std::string s = R"([{"apiToken":")";
+// Build a single JSON object entry (no array brackets) with correct credentials.
+static std::string validEntry(const char* featureName, const char* valueStr, const char* featureUuid = "f0") {
+  std::string s = R"({"apiToken":")";
   s += API_TOKEN;
   s += R"(","deviceUuid":"dev-uuid-0000","mac":"aa:bb:cc:dd:ee:ff","model":")";
   s += MODEL;
-  s += R"(","featureUuid":"feat-uuid-0000","featureName":")";
+  s += R"(","featureUuid":")";
+  s += featureUuid;
+  s += R"(","featureName":")";
   s += featureName;
   s += R"(","value":)";
   s += valueStr;
-  s += "}]";
+  s += "}";
   return s;
+}
+
+// Build a single-entry JSON array payload with the given featureName/value.
+static std::string validPayload(const char* featureName, const char* valueStr) {
+  return "[" + validEntry(featureName, valueStr) + "]";
 }
 
 // Invoke ir_send_command with a std::string payload.
@@ -86,7 +93,7 @@ TEST_F(IrBekoTest, ApiTokenMismatchCausesEarlyReturn) {
 
 TEST_F(IrBekoTest, ModelMismatchCausesEarlyReturn) {
   std::string payload =
-    R"([{"apiToken":"473a4861-632b-4915-b01e-cf1d418966c6","deviceUuid":"d","mac":"m","model":"wrong-model","featureUuid":"f","featureName":"on","value":1}])";
+    std::string(R"([{"apiToken":")") + API_TOKEN + R"(","deviceUuid":"d","mac":"m","model":"wrong-model","featureUuid":"f","featureName":"on","value":1}])";
   sendCommand(payload);
 
   EXPECT_FALSE(IrCoolixMockState::instance().on_called);
@@ -97,7 +104,7 @@ TEST_F(IrBekoTest, NullRequiredFieldsSkipsEntryAndStillSends) {
   // apiToken is missing — the entry should be skipped (continue), and the
   // outer ir_send_signal() at the end of the loop should still fire.
   std::string payload =
-    R"([{"deviceUuid":"d","mac":"m","model":"ac-beko","featureUuid":"f","featureName":"on","value":1}])";
+    std::string(R"([{"deviceUuid":"d","mac":"m","model":")") + MODEL + R"(","featureUuid":"f","featureName":"on","value":1}])";
   sendCommand(payload);
 
   EXPECT_FALSE(IrCoolixMockState::instance().on_called);
@@ -129,11 +136,7 @@ TEST_F(IrBekoTest, OnValueZeroCallsAcOffThenSendAndReturnsEarly) {
 TEST_F(IrBekoTest, OnValueZeroEarlyReturnSkipsRemainingFeatures) {
   // Array: [on=0, setpoint=22] — after "on"=0 the function returns, so
   // setpoint must NOT be applied.
-  std::string payload =
-    R"([)"
-    R"({"apiToken":"473a4861-632b-4915-b01e-cf1d418966c6","deviceUuid":"d","mac":"m","model":"ac-beko","featureUuid":"f1","featureName":"on","value":0},)"
-    R"({"apiToken":"473a4861-632b-4915-b01e-cf1d418966c6","deviceUuid":"d","mac":"m","model":"ac-beko","featureUuid":"f2","featureName":"setpoint","value":22})"
-    R"(])";
+  std::string payload = "[" + validEntry("on", "0", "f1") + "," + validEntry("setpoint", "22", "f2") + "]";
   sendCommand(payload);
 
   EXPECT_TRUE(IrCoolixMockState::instance().off_called);
@@ -263,13 +266,11 @@ TEST_F(IrBekoTest, FanSpeedUnsupportedValueDoesNotCallSetFan) {
 
 TEST_F(IrBekoTest, MultipleFeaturesAllAppliedWithSingleSend) {
   // on=1, setpoint=24, mode=1(Cool), fanSpeed=2(Med) — all in one message.
-  std::string payload =
-    R"([)"
-    R"({"apiToken":"473a4861-632b-4915-b01e-cf1d418966c6","deviceUuid":"d","mac":"m","model":"ac-beko","featureUuid":"f1","featureName":"on","value":1},)"
-    R"({"apiToken":"473a4861-632b-4915-b01e-cf1d418966c6","deviceUuid":"d","mac":"m","model":"ac-beko","featureUuid":"f2","featureName":"setpoint","value":24},)"
-    R"({"apiToken":"473a4861-632b-4915-b01e-cf1d418966c6","deviceUuid":"d","mac":"m","model":"ac-beko","featureUuid":"f3","featureName":"mode","value":1},)"
-    R"({"apiToken":"473a4861-632b-4915-b01e-cf1d418966c6","deviceUuid":"d","mac":"m","model":"ac-beko","featureUuid":"f4","featureName":"fanSpeed","value":2})"
-    R"(])";
+  std::string payload = "[" +
+    validEntry("on",       "1",  "f1") + "," +
+    validEntry("setpoint", "24", "f2") + "," +
+    validEntry("mode",     "1",  "f3") + "," +
+    validEntry("fanSpeed", "2",  "f4") + "]";
   sendCommand(payload);
 
   EXPECT_TRUE(IrCoolixMockState::instance().on_called);

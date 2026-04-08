@@ -18,7 +18,7 @@ brew install arduino-cli
 # Add ESP32 board support
 arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
 arduino-cli core update-index
-arduino-cli core install esp32:esp32@3.3.6
+arduino-cli core install esp32:esp32@3.3.7
 
 # Install all required libraries (run once)
 arduino-cli lib install "ArduinoJson"@7.4.2 "PubSubClient"@2.8.0 "TimeAlarms"@1.5.0 "Time"@1.6.1 \

@@ -15,20 +15,25 @@
 // Helpers
 // ---------------------------------------------------------------------------
 
-// Build a single-entry JSON array command payload with valid token/model.
-static std::string validEntry(const char* featureName, float value) {
-  char buf[32];
-  snprintf(buf, sizeof(buf), "%g", static_cast<double>(value));
-  std::string s = R"([{"apiToken":")";
+// Build a single JSON object entry (no array brackets) with correct credentials.
+static std::string validEntry(const char* featureName, const char* valueStr, const char* featureUuid = "f0") {
+  std::string s = R"({"apiToken":")";
   s += API_TOKEN;
-  s += R"(","deviceUuid":"d","mac":"m","model":")";
+  s += R"(","deviceUuid":"dev-uuid-0000","mac":"aa:bb:cc:dd:ee:ff","model":")";
   s += MODEL;
-  s += R"(","featureUuid":"f","featureName":")";
+  s += R"(","featureUuid":")";
+  s += featureUuid;
+  s += R"(","featureName":")";
   s += featureName;
   s += R"(","value":)";
-  s += buf;
-  s += "}]";
+  s += valueStr;
+  s += "}";
   return s;
+}
+
+// Build a single-entry JSON array payload with the given featureName/value.
+static std::string validPayload(const char* featureName, const char* valueStr) {
+  return "[" + validEntry(featureName, valueStr) + "]";
 }
 
 static char   g_dummy_uuid[37] = "device-uuid-test-0000-000000000000";
@@ -95,14 +100,14 @@ TEST_F(ControllerTest, EmptyArrayDoesNothing) {
 
 TEST_F(ControllerTest, WrongModelIsRejected) {
   std::string payload =
-    R"([{"apiToken":"473a4861-632b-4915-b01e-cf1d418966c6","deviceUuid":"d","mac":"m","model":"wrong-model","featureUuid":"f","featureName":"setpoint","value":22}])";
+    std::string(R"([{"apiToken":")") + API_TOKEN + R"(","deviceUuid":"d","mac":"m","model":"wrong-model","featureUuid":"f","featureName":"setpoint","value":22}])";
   sendConfig(payload);
   EXPECT_FLOAT_EQ(get_setpoint(), 20.0f);  // unchanged
 }
 
 TEST_F(ControllerTest, WrongApiTokenIsRejected) {
   std::string payload =
-    R"([{"apiToken":"wrong-token","deviceUuid":"d","mac":"m","model":"thermostat","featureUuid":"f","featureName":"setpoint","value":22}])";
+    std::string(R"([{"apiToken":"wrong-token","deviceUuid":"d","mac":"m","model":")") + MODEL + R"(","featureUuid":"f","featureName":"setpoint","value":22}])";
   sendConfig(payload);
   EXPECT_FLOAT_EQ(get_setpoint(), 20.0f);  // unchanged
 }
@@ -110,7 +115,7 @@ TEST_F(ControllerTest, WrongApiTokenIsRejected) {
 TEST_F(ControllerTest, MissingRequiredFieldsIsRejected) {
   // model field absent
   std::string payload =
-    R"([{"apiToken":"473a4861-632b-4915-b01e-cf1d418966c6","deviceUuid":"d","mac":"m","featureUuid":"f","featureName":"setpoint","value":22}])";
+    std::string(R"([{"apiToken":")") + API_TOKEN + R"(","deviceUuid":"d","mac":"m","featureUuid":"f","featureName":"setpoint","value":22}])";
   sendConfig(payload);
   EXPECT_FLOAT_EQ(get_setpoint(), 20.0f);  // unchanged
 }
@@ -120,27 +125,27 @@ TEST_F(ControllerTest, MissingRequiredFieldsIsRejected) {
 // ===========================================================================
 
 TEST_F(ControllerTest, SetpointInRangeIsStored) {
-  sendConfig(validEntry("setpoint", 22.0f));
+  sendConfig(validPayload("setpoint", "22"));
   EXPECT_FLOAT_EQ(get_setpoint(), 22.0f);
 }
 
 TEST_F(ControllerTest, SetpointAtMinBoundaryIsAccepted) {
-  sendConfig(validEntry("setpoint", 10.0f));
+  sendConfig(validPayload("setpoint", "10"));
   EXPECT_FLOAT_EQ(get_setpoint(), 10.0f);
 }
 
 TEST_F(ControllerTest, SetpointAtMaxBoundaryIsAccepted) {
-  sendConfig(validEntry("setpoint", 25.0f));
+  sendConfig(validPayload("setpoint", "25"));
   EXPECT_FLOAT_EQ(get_setpoint(), 25.0f);
 }
 
 TEST_F(ControllerTest, SetpointBelowMinIsRejected) {
-  sendConfig(validEntry("setpoint", 9.0f));
+  sendConfig(validPayload("setpoint", "9"));
   EXPECT_FLOAT_EQ(get_setpoint(), 20.0f);  // default unchanged
 }
 
 TEST_F(ControllerTest, SetpointAboveMaxIsRejected) {
-  sendConfig(validEntry("setpoint", 26.0f));
+  sendConfig(validPayload("setpoint", "26"));
   EXPECT_FLOAT_EQ(get_setpoint(), 20.0f);  // default unchanged
 }
 
@@ -149,22 +154,22 @@ TEST_F(ControllerTest, SetpointAboveMaxIsRejected) {
 // ===========================================================================
 
 TEST_F(ControllerTest, ToleranceInRangeIsStored) {
-  sendConfig(validEntry("tolerance", 3.0f));
+  sendConfig(validPayload("tolerance", "3"));
   EXPECT_FLOAT_EQ(get_tolerance(), 3.0f);
 }
 
 TEST_F(ControllerTest, ToleranceAtMinBoundaryIsAccepted) {
-  sendConfig(validEntry("tolerance", 0.0f));
+  sendConfig(validPayload("tolerance", "0"));
   EXPECT_FLOAT_EQ(get_tolerance(), 0.0f);
 }
 
 TEST_F(ControllerTest, ToleranceAtMaxBoundaryIsAccepted) {
-  sendConfig(validEntry("tolerance", 20.0f));
+  sendConfig(validPayload("tolerance", "20"));
   EXPECT_FLOAT_EQ(get_tolerance(), 20.0f);
 }
 
 TEST_F(ControllerTest, ToleranceAboveMaxIsRejected) {
-  sendConfig(validEntry("tolerance", 21.0f));
+  sendConfig(validPayload("tolerance", "21"));
   EXPECT_FLOAT_EQ(get_tolerance(), 5.0f);  // default unchanged
 }
 
@@ -173,11 +178,7 @@ TEST_F(ControllerTest, ToleranceAboveMaxIsRejected) {
 // ===========================================================================
 
 TEST_F(ControllerTest, BothSetpointAndToleranceInSinglePayload) {
-  std::string payload =
-    R"([)"
-    R"({"apiToken":"473a4861-632b-4915-b01e-cf1d418966c6","deviceUuid":"d","mac":"m","model":"thermostat","featureUuid":"f1","featureName":"setpoint","value":18},)"
-    R"({"apiToken":"473a4861-632b-4915-b01e-cf1d418966c6","deviceUuid":"d","mac":"m","model":"thermostat","featureUuid":"f2","featureName":"tolerance","value":2})"
-    R"(])";
+  std::string payload = "[" + validEntry("setpoint", "18", "f1") + "," + validEntry("tolerance", "2", "f2") + "]";
   sendConfig(payload);
 
   EXPECT_FLOAT_EQ(get_setpoint(),  18.0f);
@@ -187,11 +188,7 @@ TEST_F(ControllerTest, BothSetpointAndToleranceInSinglePayload) {
 TEST_F(ControllerTest, InvalidEntryInMultiPayloadRejectsAll) {
   // setpoint=22 (valid) then setpoint=9 (invalid) — the invalid entry causes
   // early return so storage_set_feature_values is never called.
-  std::string payload =
-    R"([)"
-    R"({"apiToken":"473a4861-632b-4915-b01e-cf1d418966c6","deviceUuid":"d","mac":"m","model":"thermostat","featureUuid":"f1","featureName":"setpoint","value":22},)"
-    R"({"apiToken":"473a4861-632b-4915-b01e-cf1d418966c6","deviceUuid":"d","mac":"m","model":"thermostat","featureUuid":"f2","featureName":"setpoint","value":9})"
-    R"(])";
+  std::string payload = "[" + validEntry("setpoint", "22", "f1") + "," + validEntry("setpoint", "9", "f2") + "]";
   sendConfig(payload);
 
   EXPECT_FLOAT_EQ(get_setpoint(), 20.0f);  // default — nothing stored

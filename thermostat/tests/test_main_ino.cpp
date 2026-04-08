@@ -1,0 +1,477 @@
+#include <gtest/gtest.h>
+#include <cstring>
+#include <cmath>
+#include <functional>
+#include <string>
+#include <vector>
+
+// Mock headers — must come before any production include.
+#include <Arduino.h>
+#include "WiFi.h"
+#include "WiFiClientSecure.h"
+#include "PubSubClient.h"
+#include "TimeAlarms.h"
+
+#include <ArduinoJson.h>
+
+// secrets.h must come before any firmware header that uses SSL/MODEL/API_TOKEN.
+#include "secrets.h"
+
+// Headers from the firmware (needed for function signatures only).
+#include "wifi_handler.h"
+#include "mqtt_handler.h"
+#include "registration.h"
+#include "storage.h"
+#include "temp_sensor.h"
+#include "display.h"
+#include "controller.h"
+
+// =============================================================================
+// Stubs — provide every external symbol that thermostat.ino references.
+//
+// None of the dependent .cpp files are compiled into this target.  These stubs
+// link cleanly AND let tests control the observable behaviour of each boundary.
+// setup() and loop() compile and link but are never called from tests.
+// =============================================================================
+
+// --- Globals defined in wifi_handler.cpp and mqtt_handler.cpp ---------------
+
+// SSL=true in thermostat/secrets.h → wifi_handler.h declares 'extern WiFiClientSecure wifi_client'
+WiFiClientSecure wifi_client;
+PubSubClient mqtt_client;
+
+// --- wifi_handler -----------------------------------------------------------
+
+void wifi_init_ca()              {}
+void wifi_start_connect()        {}
+void wifi_connect(char* mac)     { strncpy(mac, "aa:bb:cc:dd:ee:ff", 17); mac[17] = '\0'; }
+void wifi_reconnect(char* /*mac*/) {}
+int  wifi_get_status()           { return WL_CONNECTED; }
+
+void wifi_populate_mac(char* mac) {
+  strncpy(mac, "aa:bb:cc:dd:ee:ff", 17);
+  mac[17] = '\0';
+}
+
+// --- registration -----------------------------------------------------------
+
+int register_insecure_server(WiFiClient& /*c*/, const char* /*mac*/,
+                              const JsonDocument& /*f*/) { return 0; }
+int register_secure_server(WiFiClientSecure& /*c*/, const char* /*mac*/,
+                            const JsonDocument& /*f*/) { return 0; }
+int register_insecure_server_once(WiFiClient& /*c*/, const char* /*mac*/,
+                                  const JsonDocument& /*f*/) { return 0; }
+int register_secure_server_once(WiFiClientSecure& /*c*/, const char* /*mac*/,
+                                const JsonDocument& /*f*/) { return 0; }
+
+// --- mqtt_handler -----------------------------------------------------------
+
+void mqtt_init(Client& /*c*/,
+               std::function<void(char*, uint8_t*, unsigned int)> /*cb*/) {}
+void mqtt_connect(const char* /*uuid*/) {}
+bool mqtt_try_connect_once(const char* /*uuid*/) { return true; }
+
+// Capture every mqtt_notify_value() call so tests can inspect it.
+struct NotifyCall {
+  std::string device_uuid;
+  std::string feature_uuid;
+  std::string type;
+  float       value;
+};
+
+struct MqttNotifyCapture {
+  std::vector<NotifyCall> calls;
+
+  static MqttNotifyCapture& instance() {
+    static MqttNotifyCapture s;
+    return s;
+  }
+  static void reset() { instance().calls.clear(); }
+};
+
+void mqtt_notify_value(const char* device_uuid, const char* feature_uuid,
+                       const char* type, float value) {
+  MqttNotifyCapture::instance().calls.push_back({
+    device_uuid  ? device_uuid  : "",
+    feature_uuid ? feature_uuid : "",
+    type         ? type         : "",
+    value
+  });
+}
+
+// --- storage ----------------------------------------------------------------
+
+void   storage_get_features(JsonArray /*arr*/)     {}
+size_t storage_set_features(JsonArray /*arr*/)     { return 0; }
+void   storage_get_feature_values(JsonArray /*arr*/) {}
+size_t storage_set_feature_values(JsonArray /*arr*/) { return 0; }
+
+static char   g_stored_uuid[37] = {};
+static size_t g_stored_uuid_len  = 0;
+
+size_t storage_get_uuid(char* buf) {
+  if (buf) { strncpy(buf, g_stored_uuid, 36); buf[36] = '\0'; }
+  return g_stored_uuid_len;
+}
+size_t storage_set_uuid(const char* uuid) {
+  strncpy(g_stored_uuid, uuid, 36);
+  g_stored_uuid[36] = '\0';
+  g_stored_uuid_len = strlen(g_stored_uuid);
+  return g_stored_uuid_len;
+}
+
+// --- temp_sensor (controllable return values) --------------------------------
+
+static float g_temp = NAN;
+void  temp_init_sensor()      {}
+float temp_get_temperature()  { return g_temp; }
+
+// --- display (no-op; update_display calls are counted) ----------------------
+
+struct UpdateDisplayCapture {
+  float last_value{NAN};
+  int   call_count{0};
+  static UpdateDisplayCapture& instance() {
+    static UpdateDisplayCapture s;
+    return s;
+  }
+  static void reset() { instance() = UpdateDisplayCapture{}; }
+};
+
+void init_display()            {}
+void update_display(float v)   {
+  UpdateDisplayCapture::instance().last_value = v;
+  UpdateDisplayCapture::instance().call_count++;
+}
+
+// --- controller (controllable setpoint/tolerance; set_configuration captured) ---
+
+static float g_setpoint  = 20.0f;
+static float g_tolerance  = 5.0f;
+
+float get_setpoint()  { return g_setpoint; }
+float get_tolerance() { return g_tolerance; }
+
+struct SetConfigCall {
+  std::string payload;
+  unsigned int length;
+};
+struct SetConfigCapture {
+  std::vector<SetConfigCall> calls;
+  static SetConfigCapture& instance() {
+    static SetConfigCapture s;
+    return s;
+  }
+  static void reset() { instance().calls.clear(); }
+};
+
+void set_configuration(char* /*uuid*/, JsonArray /*features*/,
+                       uint8_t* payload, unsigned int length) {
+  SetConfigCapture::instance().calls.push_back({
+    payload ? std::string(reinterpret_cast<char*>(payload), length) : "",
+    length
+  });
+}
+
+// =============================================================================
+// Forward-declare functions defined in thermostat.ino (no header).
+// =============================================================================
+
+bool         get_feature_uuid_by_name(char* featureUuid, size_t max_len, const char* name);
+JsonDocument buildFeatures();
+void         read_temp_sensor_value();
+
+// Forward-declare mqtt_callback (defined in thermostat.ino, no header).
+void mqtt_callback(char* topic, uint8_t* payload, unsigned int length);
+
+// Expose thermostat.ino globals so the fixture can reset them between tests.
+extern JsonDocument doc_features;
+extern JsonArray    saved_features;
+extern char         saved_device_uuid[37];
+
+// =============================================================================
+// Constants — pin numbers matching thermostat.ino #defines
+// =============================================================================
+
+static constexpr uint8_t PIN_HEAT = 33;
+static constexpr uint8_t PIN_COLD = 34;
+static constexpr uint8_t PIN_FAN  = 35;
+static constexpr uint8_t PIN_PUMP = 36;
+
+// =============================================================================
+// Fixture
+// =============================================================================
+
+class MainInoTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    // Reset .ino globals.
+    doc_features.clear();
+    saved_features = doc_features.to<JsonArray>();
+    memset(saved_device_uuid, 0, sizeof(saved_device_uuid));
+
+    // Reset stubs.
+    MqttNotifyCapture::reset();
+    UpdateDisplayCapture::reset();
+    SetConfigCapture::reset();
+    MqttMockState::reset();
+    GpioMockState::reset();
+
+    g_temp        = NAN;
+    g_setpoint    = 20.0f;
+    g_tolerance   =  5.0f;
+    g_stored_uuid_len = 0;
+    memset(g_stored_uuid, 0, sizeof(g_stored_uuid));
+  }
+
+  void addFeature(const char* name, const char* uuid) {
+    JsonObject f = saved_features.add<JsonObject>();
+    f["name"] = name;
+    f["uuid"] = uuid;
+  }
+};
+
+// =============================================================================
+// get_feature_uuid_by_name
+// =============================================================================
+
+TEST_F(MainInoTest, GetFeatureUuidByNameFindsAllThreeFeatures) {
+  addFeature("setpoint",    "sp-uuid-0000-0000-000000000001");
+  addFeature("tolerance",   "tl-uuid-0000-0000-000000000002");
+  addFeature("temperature", "tm-uuid-0000-0000-000000000003");
+
+  char buf[37] = {};
+  EXPECT_TRUE(get_feature_uuid_by_name(buf, sizeof(buf), "setpoint"));
+  EXPECT_STREQ(buf, "sp-uuid-0000-0000-000000000001");
+
+  EXPECT_TRUE(get_feature_uuid_by_name(buf, sizeof(buf), "tolerance"));
+  EXPECT_STREQ(buf, "tl-uuid-0000-0000-000000000002");
+
+  EXPECT_TRUE(get_feature_uuid_by_name(buf, sizeof(buf), "temperature"));
+  EXPECT_STREQ(buf, "tm-uuid-0000-0000-000000000003");
+}
+
+TEST_F(MainInoTest, GetFeatureUuidByNameReturnsFalseWhenNotFound) {
+  addFeature("setpoint", "sp-uuid-0000-0000-000000000001");
+
+  char buf[37] = {};
+  EXPECT_FALSE(get_feature_uuid_by_name(buf, sizeof(buf), "humidity"));
+  EXPECT_STREQ(buf, "");
+}
+
+TEST_F(MainInoTest, GetFeatureUuidByNameReturnsFalseOnEmptyFeatures) {
+  char buf[37] = {};
+  EXPECT_FALSE(get_feature_uuid_by_name(buf, sizeof(buf), "temperature"));
+  EXPECT_STREQ(buf, "");
+}
+
+TEST_F(MainInoTest, GetFeatureUuidByNameSkipsEntriesWithNullFields) {
+  // Entry with name but no uuid → skipped.
+  JsonObject bad = saved_features.add<JsonObject>();
+  bad["name"] = "setpoint";
+
+  addFeature("tolerance", "tl-uuid-0000-0000-000000000002");
+
+  char buf[37] = {};
+  EXPECT_FALSE(get_feature_uuid_by_name(buf, sizeof(buf), "setpoint"));
+  EXPECT_TRUE(get_feature_uuid_by_name(buf, sizeof(buf), "tolerance"));
+}
+
+TEST_F(MainInoTest, GetFeatureUuidByNameTruncatesUuidToBufferSize) {
+  addFeature("setpoint", "sp-uuid-0000-0000-000000000001");
+
+  char buf[5] = {};
+  get_feature_uuid_by_name(buf, sizeof(buf), "setpoint");
+  EXPECT_EQ(buf[sizeof(buf) - 1], '\0');
+  EXPECT_EQ(strnlen(buf, sizeof(buf)), 4u);
+}
+
+// =============================================================================
+// buildFeatures
+// =============================================================================
+
+TEST_F(MainInoTest, BuildFeaturesReturnsThreeFeatures) {
+  JsonDocument result = buildFeatures();
+  JsonArray    arr    = result.as<JsonArray>();
+
+  ASSERT_EQ(arr.size(), 3u);
+  EXPECT_STREQ(arr[0]["name"].as<const char*>(), "setpoint");
+  EXPECT_STREQ(arr[1]["name"].as<const char*>(), "tolerance");
+  EXPECT_STREQ(arr[2]["name"].as<const char*>(), "temperature");
+}
+
+TEST_F(MainInoTest, BuildFeaturesHasCorrectFieldsPerEntry) {
+  JsonDocument result = buildFeatures();
+  JsonArray    arr    = result.as<JsonArray>();
+
+  // setpoint — controller
+  EXPECT_STREQ(arr[0]["type"].as<const char*>(), "controller");
+  EXPECT_STREQ(arr[0]["unit"].as<const char*>(), "°C");
+  EXPECT_TRUE(arr[0]["enable"].as<bool>());
+  EXPECT_EQ(arr[0]["order"].as<int>(), 1);
+
+  // tolerance — controller
+  EXPECT_STREQ(arr[1]["type"].as<const char*>(), "controller");
+  EXPECT_STREQ(arr[1]["unit"].as<const char*>(), "°C");
+  EXPECT_TRUE(arr[1]["enable"].as<bool>());
+  EXPECT_EQ(arr[1]["order"].as<int>(), 2);
+
+  // temperature — sensor
+  EXPECT_STREQ(arr[2]["type"].as<const char*>(), "sensor");
+  EXPECT_STREQ(arr[2]["unit"].as<const char*>(), "°C");
+  EXPECT_TRUE(arr[2]["enable"].as<bool>());
+  EXPECT_EQ(arr[2]["order"].as<int>(), 3);
+}
+
+// =============================================================================
+// read_temp_sensor_value — NaN guard
+// =============================================================================
+
+TEST_F(MainInoTest, ReadTempSkipsEverythingWhenNan) {
+  g_temp = NAN;
+
+  read_temp_sensor_value();
+
+  EXPECT_EQ(MqttNotifyCapture::instance().calls.size(), 0u);
+  EXPECT_EQ(UpdateDisplayCapture::instance().call_count, 0);
+  EXPECT_TRUE(GpioMockState::instance().pin_values.empty());
+}
+
+// =============================================================================
+// read_temp_sensor_value — display update
+// =============================================================================
+
+TEST_F(MainInoTest, ReadTempCallsUpdateDisplayWithCorrectValue) {
+  g_temp = 21.5f;
+
+  read_temp_sensor_value();
+
+  EXPECT_EQ(UpdateDisplayCapture::instance().call_count, 1);
+  EXPECT_FLOAT_EQ(UpdateDisplayCapture::instance().last_value, 21.5f);
+}
+
+// =============================================================================
+// read_temp_sensor_value — MQTT publish
+// =============================================================================
+
+TEST_F(MainInoTest, ReadTempPublishesWhenConnectedAndFeatureFound) {
+  MqttMockState::instance().connected_val = true;
+  strncpy(saved_device_uuid, "device-uuid-test-0000-000000000000", 36);
+  addFeature("temperature", "tm-uuid-0000-0000-000000000003");
+  g_temp = 22.0f;
+
+  read_temp_sensor_value();
+
+  ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 1u);
+  EXPECT_EQ(MqttNotifyCapture::instance().calls[0].type, "temperature");
+  EXPECT_FLOAT_EQ(MqttNotifyCapture::instance().calls[0].value, 22.0f);
+}
+
+TEST_F(MainInoTest, ReadTempSkipsPublishWhenNotConnected) {
+  MqttMockState::instance().connected_val = false;
+  addFeature("temperature", "tm-uuid-0000-0000-000000000003");
+  g_temp = 22.0f;
+
+  read_temp_sensor_value();
+
+  EXPECT_EQ(MqttNotifyCapture::instance().calls.size(), 0u);
+}
+
+TEST_F(MainInoTest, ReadTempSkipsPublishWhenFeatureNotFound) {
+  MqttMockState::instance().connected_val = true;
+  // No features registered → UUID lookup fails.
+  g_temp = 22.0f;
+
+  read_temp_sensor_value();
+
+  EXPECT_EQ(MqttNotifyCapture::instance().calls.size(), 0u);
+}
+
+// =============================================================================
+// read_temp_sensor_value — hysteretic GPIO control
+// =============================================================================
+
+TEST_F(MainInoTest, ReadTempTooHotActivatesCooling) {
+  // temp(28) > setpoint(20) + tolerance(5) = 25 → cooling branch
+  g_temp      = 28.0f;
+  g_setpoint  = 20.0f;
+  g_tolerance =  5.0f;
+
+  read_temp_sensor_value();
+
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], static_cast<uint8_t>(LOW));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], static_cast<uint8_t>(HIGH));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], static_cast<uint8_t>(HIGH));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  static_cast<uint8_t>(HIGH));
+}
+
+TEST_F(MainInoTest, ReadTempTooColdActivatesHeating) {
+  // temp(12) < setpoint(20) - tolerance(5) = 15 → heating branch
+  g_temp      = 12.0f;
+  g_setpoint  = 20.0f;
+  g_tolerance =  5.0f;
+
+  read_temp_sensor_value();
+
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], static_cast<uint8_t>(HIGH));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], static_cast<uint8_t>(LOW));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], static_cast<uint8_t>(LOW));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  static_cast<uint8_t>(LOW));
+}
+
+TEST_F(MainInoTest, ReadTempInRangeTurnsAllOff) {
+  // temp(20) in [15, 25] → idle branch
+  g_temp      = 20.0f;
+  g_setpoint  = 20.0f;
+  g_tolerance =  5.0f;
+
+  read_temp_sensor_value();
+
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], static_cast<uint8_t>(LOW));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], static_cast<uint8_t>(LOW));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], static_cast<uint8_t>(LOW));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  static_cast<uint8_t>(LOW));
+}
+
+TEST_F(MainInoTest, ReadTempExactlyAtUpperBoundIsInRange) {
+  // temp == setpoint + tolerance → NOT in "too hot" branch (condition is >)
+  g_temp      = 25.0f;  // exactly setpoint(20) + tolerance(5)
+  g_setpoint  = 20.0f;
+  g_tolerance =  5.0f;
+
+  read_temp_sensor_value();
+
+  // Falls into the idle (else) branch.
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], static_cast<uint8_t>(LOW));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], static_cast<uint8_t>(LOW));
+}
+
+TEST_F(MainInoTest, ReadTempExactlyAtLowerBoundIsInRange) {
+  // temp == setpoint - tolerance → NOT in "too cold" branch (condition is <)
+  g_temp      = 15.0f;  // exactly setpoint(20) - tolerance(5)
+  g_setpoint  = 20.0f;
+  g_tolerance =  5.0f;
+
+  read_temp_sensor_value();
+
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], static_cast<uint8_t>(LOW));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], static_cast<uint8_t>(LOW));
+}
+
+// =============================================================================
+// mqtt_callback — delegates to set_configuration
+// =============================================================================
+
+TEST_F(MainInoTest, MqttCallbackDelegatesToSetConfiguration) {
+  const char* topic   = "devices/dev-uuid/values";
+  const char* payload = R"([{"featureName":"setpoint","value":22}])";
+  auto*        p      = reinterpret_cast<uint8_t*>(const_cast<char*>(payload));
+  unsigned int len    = static_cast<unsigned int>(strlen(payload));
+
+  mqtt_callback(const_cast<char*>(topic), p, len);
+
+  ASSERT_EQ(SetConfigCapture::instance().calls.size(), 1u);
+  EXPECT_NE(SetConfigCapture::instance().calls[0].payload.find("setpoint"),
+            std::string::npos);
+  EXPECT_EQ(SetConfigCapture::instance().calls[0].length, len);
+}

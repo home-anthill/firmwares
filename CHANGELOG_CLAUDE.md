@@ -115,3 +115,40 @@ Comment claimed "100 retries" but the guard was `wifi_retries > 300`. Corrected 
 
 **Format string bug — `dht-light/dht-light.ino`**
 `"%.2f %\n"` contained a lone `%`, which is an invalid format specifier. Escaped as `"%.2f %%\n"`.
+
+---
+
+## Tests
+
+**GoogleTest-based host unit tests — all 7 firmware directories**
+
+Each firmware directory now contains a `tests/` subdirectory with a CMake build that runs on the host (no ESP32 hardware or Arduino SDK required). GoogleTest v1.14.0 and ArduinoJson v7.4.2 are fetched automatically via CMake `FetchContent`. Mock headers under `tests/mocks/` stub out the entire ESP32/Arduino SDK surface (`Arduino.h`, `WiFi.h`, `WiFiClientSecure.h`, `PubSubClient.h`, `Preferences.h`, `TimeAlarms.h`, and all sensor/peripheral headers) so production `.cpp` files compile and link on the host unchanged.
+
+Each firmware compiles separate test executables registered with CTest:
+
+| Executable | What is tested |
+|---|---|
+| `test_storage` | `storage_set_uuid` / `storage_get_uuid`, `storage_set_features` / `storage_get_features`, independence of the two keys, overwrite and empty-array semantics |
+| `test_registration` | HTTP registration happy path (200 / 409), JSON field null checks, `malloc` null guard, `DeserializationError` handling, return-code contract |
+| `test_mqtt_handler` | `mqtt_notify_value` topic routing (sensor vs online), payload structure, negative values, disconnect-on-publish-failure, no-disconnect on success; `mqtt_connect` happy path |
+| `test_main_ino` | `get_feature_uuid_by_name` (match, miss, empty array, null fields, buffer truncation), `buildFeatures()` shape and field values, sensor alarm callbacks (`read_*_sensor_value`) including NaN/not-found guard paths |
+| `test_dht_sensor` | DHT22 temperature and humidity reads via mock sensor |
+| `test_light_sensor` | TSL2561 lux reads via mock sensor (`dht-light` only) |
+| `test_barometer_sensor` | Pressure reads via mock XENSIV sensor (`barometer` only) |
+| `test_airquality_sensor` | TVOC/eCO2 reads via mock sensor (`airquality-pir` only) |
+| `test_pir_sensor` | PIR state reads via mock GPIO (`airquality-pir` only) |
+| `test_ir_beko` | IR command dispatch, null `featureName` guard, `featureNameval` rename (`ac-beko` only) |
+| `test_ir_lg` | Same as above for LG protocol (`ac-lg` only) |
+| `test_controller` | Setpoint/tolerance get/set, hysteretic control logic (HEAT/COLD/FAN/PUMP outputs), `set_configuration` token/model validation, null-field guards (`thermostat` only) |
+| `test_temp_sensor` | MCP9600 thermocouple reads via mock I2C (`thermostat` only) |
+| `test_display` | OLED display update logic via mock SSD1306 (`thermostat` only) |
+
+`test_main_ino` uses a thin `main_ino_wrapper.cpp` to compile the `.ino` file as C++; all module dependencies are replaced by stubs defined inside the test file itself, giving fine-grained control over sensor return values, MQTT capture, and storage state. `setup()` and `loop()` compile and link but are never called from tests (full I/O orchestration is not unit-testable without hardware).
+
+Build and run:
+```bash
+cd <firmware>/tests
+cmake -B build && cmake --build build
+cd build && ctest --output-on-failure
+```
+

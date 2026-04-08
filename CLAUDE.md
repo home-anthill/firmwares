@@ -75,10 +75,27 @@ The `SSL` define controls whether connections use TLS — when toggling it, also
 - **Preferences storage**: Use `preferences.h` inspection via Serial to debug persistent storage issues.
 
 ### Testing Approach
-There are no unit tests — all testing is integration-based on real hardware:
-- **Hardware testing**: Deploy to ESP32, connect to local MQTT broker, verify messages appear.
-- **Simulated testing** (CI): The GitHub Actions workflow builds all firmwares using `secrets-template` to verify compilation across board variants (esp32, esp32s2, esp32s3).
-- **Common test flow**: Start MQTT broker locally (`docker run --name mosquitto -p 1883:1883 eclipse-mosquitto`), flash firmware, subscribe to topics, verify values appear.
+
+**Host unit tests** (GoogleTest, no hardware required): every firmware has a `tests/` directory with a CMake build. GoogleTest v1.14.0 and ArduinoJson v7.4.2 are fetched automatically via `FetchContent`. Mock headers under `tests/mocks/` stub the entire ESP32/Arduino SDK so production `.cpp` files compile on the host unchanged. The `.ino` file is compiled as C++ via `main_ino_wrapper.cpp`.
+
+```bash
+# Build and run tests for one firmware
+cd <firmware>/tests
+cmake -B build && cmake --build build
+cd build && ctest --output-on-failure
+
+# Run a single test executable directly (faster during development)
+./build/test_storage
+./build/test_mqtt_handler
+```
+
+Each firmware provides separate test executables per module (`test_storage`, `test_registration`, `test_mqtt_handler`, `test_main_ino`, plus device-specific ones such as `test_dht_sensor`, `test_ir_beko`, `test_controller`, etc.). All are registered with CTest.
+
+**Hardware / integration testing** (still required for sensor accuracy and IR codes):
+- Deploy to ESP32, connect to local MQTT broker, verify messages appear.
+- Start broker: `docker run --name mosquitto -p 1883:1883 eclipse-mosquitto`
+
+**CI**: The GitHub Actions workflow builds all firmwares using `secrets-template` across board variants (esp32, esp32s2, esp32s3) to verify compilation.
 
 ### secrets.h fields
 
@@ -228,4 +245,5 @@ To add a new device:
    - `mqtt_callback()`: handle commands (empty for sensors, implements control logic for controllers)
    - `buildFeatures()`: define device capabilities as JSON array
 5. Add the device to `.github/workflows/run-build.yml` build matrix.
-6. Test compilation: `arduino-cli compile --fqbn esp32:esp32:esp32 ./<device_name>.ino`
+6. Create `tests/` with a `CMakeLists.txt` and mocks — copy the closest existing firmware's `tests/` directory as a starting point, then add device-specific test files.
+7. Test compilation: `arduino-cli compile --fqbn esp32:esp32:esp32 ./<device_name>.ino`

@@ -114,3 +114,33 @@ jobs:
           cd thermostat
           arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./thermostat.ino
           cd ..
+  unit-tests:
+    name: Unit tests (host)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Copy secrets template to all firmwares
+        run: |
+          # Prepare sensor.h files based on `secrets-template`, because
+          # we don't need real config files to build all firmwares in CI.
+          cp secrets-template airquality-pir/secrets.h
+          cp secrets-template barometer/secrets.h
+          cp secrets-template dht-light/secrets.h
+          cp secrets-template power-outage/secrets.h
+          cp secrets-template ac-beko/secrets.h
+          cp secrets-template ac-lg/secrets.h
+          cp secrets-template thermostat/secrets.h
+
+      - name: Build and run unit tests
+        run: |
+          for fw in airquality-pir barometer dht-light power-outage ac-beko ac-lg thermostat; do
+            echo "::group::$fw"
+            cmake -S $fw/tests -B $fw/tests/build
+            cmake --build $fw/tests/build --parallel
+            ctest --test-dir $fw/tests/build --output-on-failure
+            echo "::endgroup::"
+          done

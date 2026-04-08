@@ -3,3 +3,6 @@
 .vscode
 
 secrets.h
+
+# CMake / GoogleTest build artifacts
+**/tests/build/

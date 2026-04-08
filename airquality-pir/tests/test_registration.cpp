@@ -20,10 +20,15 @@
 static constexpr const char* kMac  = "aa:bb:cc:dd:ee:ff";
 static constexpr const char* kUuid = "test-uuid-0000-0000-000000000000";
 
-// A well-formed 200 OK response that matches kMac, MANUFACTURER ("ks89"),
-// and MODEL ("airquality-pir") as defined in secrets.h.
+// A well-formed 200 OK response that matches kMac, MANUFACTURER, and MODEL as
+// defined in secrets.h — built dynamically so the test works with any secrets.h.
 static std::string valid_response() {
-  return R"({"uuid":"test-uuid-0000-0000-000000000000","mac":"aa:bb:cc:dd:ee:ff","manufacturer":"ks89","model":"airquality-pir","features":[{"uuid":"feat-uuid-0000-0000-000000000001","type":"sensor","name":"airquality","enable":true,"order":1,"unit":"-"},{"uuid":"feat-uuid-0000-0000-000000000002","type":"sensor","name":"motion","enable":true,"order":2,"unit":"-"}]})";
+  return std::string(
+    R"({"uuid":"test-uuid-0000-0000-000000000000","mac":"aa:bb:cc:dd:ee:ff","manufacturer":")")
+    + MANUFACTURER
+    + R"(","model":")"
+    + MODEL
+    + R"(","features":[{"uuid":"feat-uuid-0000-0000-000000000001","type":"sensor","name":"airquality","enable":true,"order":1,"unit":"-"},{"uuid":"feat-uuid-0000-0000-000000000002","type":"sensor","name":"motion","enable":true,"order":2,"unit":"-"}]})";
 }
 
 // ---------------------------------------------------------------------------

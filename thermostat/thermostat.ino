@@ -52,6 +52,10 @@ JsonArray saved_features = doc_features.to<JsonArray>();
 #elif defined(CONFIG_IDF_TARGET_ESP32S2)
   #define HEAT 33
   #define COLD 34
+#elif defined(CONFIG_IDF_TARGET_ESP32)
+  // TODO: test this on a real older ESP32 model
+  #define HEAT 2
+  #define COLD 15
 #endif
 #define FAN 35
 #define PUMP 36

@@ -85,6 +85,11 @@ Three compounding problems:
 
 Exhausting any phase's budget transitions to `CONN_COOLDOWN`, capping reboots to ~2/day.
 
+**Boot-time WiFi false positive fix — `thermostat/thermostat.ino`**
+The first version of the thermostat state machine still consumed WiFi "polls" on every `loop()` iteration instead of on a real retry interval. Because the thermostat runs `Alarm.delay(100)` in `loop()`, the `CONN_WIFI_WAITING` budget was being spent about 10 times per second, so a nominal 30-poll window could be exhausted in roughly 3 seconds during boot.
+
+Fixed by time-gating WiFi polling with `conn_next_attempt_ms`, so attempts are only counted after the retry window elapses. The WiFi boot grace period was also rebalanced to poll every 2 seconds for up to 45 polls, giving about 90 seconds before entering the long offline cooldown. Added thermostat host-side tests covering both sides of the bug: rapid loop iterations no longer burn attempts, and cooldown is entered only after the full timed WiFi budget is spent.
+
 New thermostat-specific helpers:
 - `wifi_start_connect()` — non-blocking `WiFi.begin()`; `wifi_populate_mac()` — reads MAC once up.
 - `mqtt_try_connect_once()` — single attempt, no internal retry or delay.
@@ -151,4 +156,3 @@ cd <firmware>/tests
 cmake -B build && cmake --build build
 cd build && ctest --output-on-failure
 ```
-

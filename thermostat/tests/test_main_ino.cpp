@@ -46,7 +46,8 @@ void wifi_init_ca()              {}
 void wifi_start_connect()        {}
 void wifi_connect(char* mac)     { strncpy(mac, "aa:bb:cc:dd:ee:ff", 17); mac[17] = '\0'; }
 void wifi_reconnect(char* /*mac*/) {}
-int  wifi_get_status()           { return WL_CONNECTED; }
+static int g_wifi_status = WL_CONNECTED;
+int  wifi_get_status()           { return g_wifi_status; }
 
 void wifi_populate_mac(char* mac) {
   strncpy(mac, "aa:bb:cc:dd:ee:ff", 17);
@@ -184,6 +185,24 @@ void         read_temp_sensor_value();
 // Forward-declare mqtt_callback (defined in thermostat.ino, no header).
 void mqtt_callback(char* topic, uint8_t* payload, unsigned int length);
 
+void         handle_connectivity();
+
+enum ConnState {
+  CONN_WIFI_WAITING,
+  CONN_REGISTERING,
+  CONN_MQTT_TRYING,
+  CONN_ONLINE,
+  CONN_COOLDOWN
+};
+
+extern ConnState     conn_state;
+extern int           conn_attempts;
+extern unsigned long conn_next_attempt_ms;
+extern unsigned long conn_cooldown_until_ms;
+
+static constexpr int WIFI_POLL_LIMIT = 45;
+static constexpr unsigned long WIFI_POLL_INTERVAL_MS = 2000;
+
 // Expose thermostat.ino globals so the fixture can reset them between tests.
 extern JsonDocument doc_features;
 extern JsonArray    saved_features;
@@ -220,8 +239,14 @@ protected:
     g_temp        = NAN;
     g_setpoint    = 20.0f;
     g_tolerance   =  5.0f;
+    g_wifi_status = WL_CONNECTED;
     g_stored_uuid_len = 0;
     memset(g_stored_uuid, 0, sizeof(g_stored_uuid));
+    conn_state = CONN_WIFI_WAITING;
+    conn_attempts = 0;
+    conn_next_attempt_ms = 0;
+    conn_cooldown_until_ms = 0;
+    mock_set_millis(0);
   }
 
   void addFeature(const char* name, const char* uuid) {
@@ -474,4 +499,43 @@ TEST_F(MainInoTest, MqttCallbackDelegatesToSetConfiguration) {
   EXPECT_NE(SetConfigCapture::instance().calls[0].payload.find("setpoint"),
             std::string::npos);
   EXPECT_EQ(SetConfigCapture::instance().calls[0].length, len);
+}
+
+TEST_F(MainInoTest, WifiPollingDoesNotBurnAttemptsBeforeRetryWindowElapses) {
+  g_wifi_status = 0;
+
+  handle_connectivity();
+  EXPECT_EQ(conn_attempts, 1);
+
+  for (int i = 0; i < 19; ++i) {
+    mock_advance_millis(100);
+    handle_connectivity();
+  }
+
+  EXPECT_EQ(conn_attempts, 1);
+  EXPECT_EQ(conn_state, CONN_WIFI_WAITING);
+  EXPECT_EQ(conn_cooldown_until_ms, 0UL);
+}
+
+TEST_F(MainInoTest, WifiPollingEntersCooldownOnlyAfterTimedPollBudgetIsSpent) {
+  g_wifi_status = 0;
+
+  handle_connectivity();
+  EXPECT_EQ(conn_attempts, 1);
+
+  for (int i = 0; i < WIFI_POLL_LIMIT - 1; ++i) {
+    mock_advance_millis(WIFI_POLL_INTERVAL_MS);
+    handle_connectivity();
+  }
+
+  EXPECT_EQ(conn_attempts, WIFI_POLL_LIMIT);
+  EXPECT_EQ(conn_state, CONN_WIFI_WAITING);
+  EXPECT_EQ(conn_cooldown_until_ms, 0UL);
+
+  mock_advance_millis(WIFI_POLL_INTERVAL_MS);
+  handle_connectivity();
+
+  EXPECT_EQ(conn_attempts, WIFI_POLL_LIMIT + 1);
+  EXPECT_EQ(conn_state, CONN_COOLDOWN);
+  EXPECT_GT(conn_cooldown_until_ms, millis());
 }

@@ -14,6 +14,9 @@
 #define TOLERANCE_MIN 0
 #define TOLERANCE_MAX 20
 
+static constexpr float DEFAULT_SETPOINT = 20.0f;
+static constexpr float DEFAULT_TOLERANCE = 5.0f;
+
 float get_setpoint() {
   Serial.println("get_setpoint - called");
   JsonDocument doc;
@@ -28,7 +31,7 @@ float get_setpoint() {
       return f_feature_value;
     }
   }
-  return 22; // default value
+  return DEFAULT_SETPOINT;
 }
 
 float get_tolerance() {
@@ -45,7 +48,7 @@ float get_tolerance() {
       return f_feature_value;
     }
   }
-  return 0; // default value
+  return DEFAULT_TOLERANCE;
 }
 
 void set_configuration(char* saved_device_uuid, JsonArray saved_features, uint8_t* payload, unsigned int length) {  

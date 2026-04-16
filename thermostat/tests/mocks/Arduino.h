@@ -114,10 +114,14 @@ inline EspClass ESP;
 
 // --- Time / delay -----------------------------------------------------------
 
+inline unsigned long g_mock_millis = 0UL;
+
 inline void          delay(unsigned long ms) { (void)ms; }
-inline unsigned long millis()                { return 0UL; }
+inline unsigned long millis()                { return g_mock_millis; }
 inline unsigned long micros()                { return 0UL; }
 inline void          delayMicroseconds(unsigned int us) { (void)us; }
+inline void          mock_set_millis(unsigned long ms)  { g_mock_millis = ms; }
+inline void          mock_advance_millis(unsigned long ms) { g_mock_millis += ms; }
 
 // setTime — from the Arduino Time library; no-op in tests.
 inline void setTime(int /*hr*/, int /*min*/, int /*sec*/,

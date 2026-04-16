@@ -86,8 +86,10 @@ unsigned long conn_next_attempt_ms = 0;
 // millis() timestamp: when the cooldown period ends (→ ESP.restart())
 unsigned long conn_cooldown_until_ms = 0;
 
-// Give up on WiFi after this many 1-second polls (≈ 30 s)
-const int CONN_MAX_WIFI_POLLS = 120;
+// Give WiFi extra time on boot: poll every 2 s for up to ~90 s before the
+// device enters the long offline cooldown.
+const int CONN_MAX_WIFI_POLLS = 45;
+const unsigned long CONN_WIFI_POLL_INTERVAL_MS = 2000;
 // Give up on first-boot registration after this many attempts
 const int CONN_MAX_REG_ATTEMPTS = 3;
 // Give up on MQTT after this many attempts
@@ -305,7 +307,11 @@ void handle_connectivity() {
         conn_state = CONN_MQTT_TRYING;
       }
     } else {
+      if (now < conn_next_attempt_ms)
+        break;
+
       conn_attempts++;
+      conn_next_attempt_ms = now + CONN_WIFI_POLL_INTERVAL_MS;
       if (conn_attempts > CONN_MAX_WIFI_POLLS) {
         Serial.printf("handle_connectivity - WiFi: max polls (%d) reached, "
                       "entering cooldown\n",

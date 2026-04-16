@@ -28,7 +28,7 @@ float get_setpoint() {
       return f_feature_value;
     }
   }
-  return 20; // default value
+  return 22; // default value
 }
 
 float get_tolerance() {
@@ -45,7 +45,7 @@ float get_tolerance() {
       return f_feature_value;
     }
   }
-  return 5; // default value
+  return 0; // default value
 }
 
 void set_configuration(char* saved_device_uuid, JsonArray saved_features, uint8_t* payload, unsigned int length) {  

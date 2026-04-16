@@ -46,8 +46,13 @@ JsonDocument doc_features;
 JsonArray saved_features = doc_features.to<JsonArray>();
 
 // outputs
-#define HEAT 33
-#define COLD 34
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+  #define HEAT 47
+  #define COLD 48
+#elif defined(CONFIG_IDF_TARGET_ESP32S2)
+  #define HEAT 33
+  #define COLD 34
+#endif
 #define FAN 35
 #define PUMP 36
 
@@ -82,7 +87,7 @@ unsigned long conn_next_attempt_ms = 0;
 unsigned long conn_cooldown_until_ms = 0;
 
 // Give up on WiFi after this many 1-second polls (≈ 30 s)
-const int CONN_MAX_WIFI_POLLS = 30;
+const int CONN_MAX_WIFI_POLLS = 120;
 // Give up on first-boot registration after this many attempts
 const int CONN_MAX_REG_ATTEMPTS = 3;
 // Give up on MQTT after this many attempts

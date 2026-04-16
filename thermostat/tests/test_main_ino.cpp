@@ -166,7 +166,8 @@ struct SetConfigCapture {
   static void reset() { instance().calls.clear(); }
 };
 
-void set_configuration(char* /*uuid*/, JsonArray /*features*/,
+void set_configuration(const char* /*uuid*/, const char* /*mac*/,
+                       JsonArray /*features*/,
                        uint8_t* payload, unsigned int length) {
   SetConfigCapture::instance().calls.push_back({
     payload ? std::string(reinterpret_cast<char*>(payload), length) : "",

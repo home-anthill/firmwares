@@ -52,7 +52,8 @@ bool get_feature_uuid_by_name(char* featureUuid, size_t max_len, const char* nam
 
 void mqtt_callback(char* topic, uint8_t* payload, unsigned int length) {
   Serial.println("mqtt_callback - called");
-  ir_send_command(topic, payload, length);
+  ir_send_command(saved_device_uuid, mac_address, saved_features, topic, payload,
+                  length);
 }
 
 JsonDocument buildFeatures() {

@@ -37,6 +37,15 @@ Fields `uuid`, `mac`, `manufacturer`, `model` from the HTTP registration respons
 **Null dereference in thermostat controller — `thermostat/controller.cpp`**
 In `get_setpoint()`, `get_tolerance()`, and `set_configuration()`, JSON-extracted strings `f_feature_name`, `f_model`, `f_api_token` were passed to `strcmp()` without null checks. Fixed with null guards before every `strcmp` call.
 
+**Inbound command authorization not bound to device identity — `thermostat/controller.cpp`, `ac-lg/ir_lg.cpp`, `ac-beko/ir_beko.cpp`**
+Inbound MQTT command payloads were validated only against shared `apiToken` and `model`, but not against the specific target device. `deviceUuid`, `mac`, and `featureUuid` were present in the payloads yet not enforced, so any actor able to publish a valid command for the product line could spoof commands to another registered device of the same model.
+
+Fixed by binding command execution to the registered device identity and feature set:
+- `thermostat`: `set_configuration()` now requires `deviceUuid == saved_device_uuid`, `mac == device MAC`, and a `featureUuid`/`featureName` pair that matches the thermostat's registered features.
+- `ac-lg` / `ac-beko`: `ir_send_command()` now enforces the same checks before applying any IR state change.
+
+The `.ino` MQTT callbacks for those controller firmwares were updated to pass the saved UUID, current MAC, and registered features into the command handlers. Added host-side regression tests covering rejection of wrong `deviceUuid`, wrong `mac`, wrong `featureUuid`, and mismatched `featureUuid`/`featureName` combinations.
+
 ---
 
 ## Crash & Recovery

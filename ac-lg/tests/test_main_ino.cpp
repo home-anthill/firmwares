@@ -80,7 +80,9 @@ struct IrCommandCapture {
 
 void ir_init() {}
 
-void ir_send_command(char* topic, uint8_t* payload, unsigned int length) {
+void ir_send_command(const char* /*uuid*/, const char* /*mac*/,
+                     JsonArray /*features*/, char* topic, uint8_t* payload,
+                     unsigned int length) {
   IrCommandCapture::instance().calls.push_back({
     topic   ? topic   : "",
     payload ? std::string(reinterpret_cast<char*>(payload), length) : "",

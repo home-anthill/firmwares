@@ -14,6 +14,22 @@
 #define TOLERANCE_MIN 0
 #define TOLERANCE_MAX 20
 
+static bool payload_matches_registered_feature(JsonArray saved_features,
+                                               const char* feature_uuid,
+                                               const char* feature_name) {
+  for (size_t i = 0; i < saved_features.size(); i++) {
+    JsonObject feature = saved_features[i];
+    const char* saved_uuid = feature["uuid"];
+    const char* saved_name = feature["name"];
+    if (saved_uuid == nullptr || saved_name == nullptr) continue;
+    if (strcmp(saved_uuid, feature_uuid) == 0 &&
+        strcmp(saved_name, feature_name) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 static constexpr float DEFAULT_SETPOINT = 20.0f;
 static constexpr float DEFAULT_TOLERANCE = 5.0f;
 
@@ -51,7 +67,10 @@ float get_tolerance() {
   return DEFAULT_TOLERANCE;
 }
 
-void set_configuration(char* saved_device_uuid, JsonArray saved_features, uint8_t* payload, unsigned int length) {  
+void set_configuration(const char* saved_device_uuid,
+                       const char* saved_mac_address,
+                       JsonArray saved_features, uint8_t* payload,
+                       unsigned int length) {
   JsonDocument doc;
   DeserializationError error = deserializeJson(doc, payload, length);
   if (error) {
@@ -81,12 +100,24 @@ void set_configuration(char* saved_device_uuid, JsonArray saved_features, uint8_
     Serial.printf("---------------------------\n");
 
     // validate infos
-    if (f_model == nullptr || f_api_token == nullptr || f_feature_name == nullptr) {
+    if (f_model == nullptr || f_api_token == nullptr ||
+        f_device_uuid == nullptr || f_mac == nullptr ||
+        f_feature_uuid == nullptr || f_feature_name == nullptr) {
       Serial.println("set_configuration - error missing required fields in payload");
       return;
     }
     if (strcmp(f_model, MODEL) != 0 || strcmp(f_api_token, API_TOKEN) != 0) {
       Serial.println("set_configuration - error model and api_token doesn't match");
+      return;
+    }
+    if (strcmp(f_device_uuid, saved_device_uuid) != 0 ||
+        strcmp(f_mac, saved_mac_address) != 0) {
+      Serial.println("set_configuration - error device identity doesn't match");
+      return;
+    }
+    if (!payload_matches_registered_feature(saved_features, f_feature_uuid,
+                                            f_feature_name)) {
+      Serial.println("set_configuration - error feature_uuid is not registered for this device");
       return;
     }
     if (strcmp(f_feature_name, "setpoint") == 0) {

@@ -16,6 +16,22 @@
 // private functions
 void ir_send_signal();
 
+static bool payload_matches_registered_feature(JsonArray saved_features,
+                                               const char* feature_uuid,
+                                               const char* feature_name) {
+  for (size_t i = 0; i < saved_features.size(); i++) {
+    JsonObject feature = saved_features[i];
+    const char* saved_uuid = feature["uuid"];
+    const char* saved_name = feature["name"];
+    if (saved_uuid == nullptr || saved_name == nullptr) continue;
+    if (strcmp(saved_uuid, feature_uuid) == 0 &&
+        strcmp(saved_name, feature_name) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // ------------------------------------------------------
 // ------------------ IRremoteESP8266 -------------------
 // GPIO pin to use to send IR signals
@@ -54,7 +70,9 @@ void ir_init() {
   ac.begin();
 }
 
-void ir_send_command(char* topic, uint8_t* payload, unsigned int length) {
+void ir_send_command(const char* saved_device_uuid,
+                     const char* saved_mac_address, JsonArray saved_features,
+                     char* topic, uint8_t* payload, unsigned int length) {
   JsonDocument doc;
   DeserializationError error = deserializeJson(doc, payload, length);
   if (error) {
@@ -75,12 +93,24 @@ void ir_send_command(char* topic, uint8_t* payload, unsigned int length) {
     float valueval             = mqttFeature["value"];
 
     // Validate required fields before use
-    if (apiTokenval == nullptr || modelval == nullptr || featureNameval == nullptr) {
+    if (apiTokenval == nullptr || deviceUuidval == nullptr ||
+        macval == nullptr || modelval == nullptr ||
+        featureUuidval == nullptr || featureNameval == nullptr) {
       Serial.println("ir_send_command - skipping entry with null required field");
       continue;
     }
     if (strcmp(apiTokenval, API_TOKEN) != 0 || strcmp(modelval, MODEL) != 0) {
       Serial.println("ir_send_command - apiToken or model mismatch, ignoring command");
+      return;
+    }
+    if (strcmp(deviceUuidval, saved_device_uuid) != 0 ||
+        strcmp(macval, saved_mac_address) != 0) {
+      Serial.println("ir_send_command - device identity mismatch, ignoring command");
+      return;
+    }
+    if (!payload_matches_registered_feature(saved_features, featureUuidval,
+                                            featureNameval)) {
+      Serial.println("ir_send_command - feature_uuid is not registered for this device");
       return;
     }
 

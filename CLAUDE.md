@@ -24,7 +24,8 @@ arduino-cli core install esp32:esp32@3.3.7
 arduino-cli lib install "ArduinoJson"@7.4.2 "PubSubClient"@2.8.0 "TimeAlarms"@1.5.0 "Time"@1.6.1 \
   "Adafruit Unified Sensor"@1.1.15 "DHT sensor library"@1.4.6 "Grove - Digital Light Sensor"@2.0.0 \
   "HttpClient"@2.2.0 "XENSIV Digital Pressure Sensor"@1.0.2 "Grove - Air quality sensor"@1.0.2 \
-  "IRremoteESP8266"@2.9.0
+  "IRremoteESP8266"@2.9.0 "Adafruit GFX Library"@1.12.5 "Adafruit SSD1306"@2.5.16 \
+  "Adafruit BusIO"@1.17.4 "Adafruit MCP9600 Library"@2.0.4
 
 # Prepare secrets
 cp secrets-template dht-light/secrets.h
@@ -40,6 +41,13 @@ cd dht-light && arduino-cli compile --fqbn esp32:esp32:esp32 ./dht-light.ino
 arduino-cli compile --fqbn esp32:esp32:esp32s2 ./dht-light.ino
 arduino-cli compile --fqbn esp32:esp32:esp32s3 ./dht-light.ino
 
+# Build all firmwares and run all host tests
+./build-all.sh
+
+# Run only host tests, or only Arduino firmware builds
+./build-all.sh --test-only
+./build-all.sh --build-only
+
 # Upload to connected ESP32 (find port with: arduino-cli board list)
 arduino-cli upload --fqbn esp32:esp32:esp32 --port /dev/ttyUSB0 ./dht-light.ino
 
@@ -51,6 +59,8 @@ screen /dev/ttyUSB0 115200   # Ctrl+A, Ctrl+\ to exit
 ## Build
 
 Firmwares are built using **Arduino CLI** (not PlatformIO). There is no Makefile — compilation is done directly via `arduino-cli compile`. See **Quick Start** above for board setup, library install commands, and the compile command pattern.
+
+For a repo-wide local check, use `./build-all.sh`. It prepares missing `secrets.h` files from `secrets-template`, builds all 7 firmwares for `esp32s2` and `esp32s3`, and runs every host unit test. Use `--build-only`, `--test-only`, and `--clean-tests` to narrow the run.
 
 Each firmware directory must contain a `secrets.h` file (gitignored). Copy `secrets-template` to `<firmware>/secrets.h` and fill in real values for development, or use it as-is for CI builds.
 
@@ -87,6 +97,9 @@ cd build && ctest --output-on-failure
 # Run a single test executable directly (faster during development)
 ./build/test_storage
 ./build/test_mqtt_handler
+
+# Run all firmware host tests from the repo root
+./build-all.sh --test-only
 ```
 
 Each firmware provides separate test executables per module (`test_storage`, `test_registration`, `test_mqtt_handler`, `test_main_ino`, plus device-specific ones such as `test_dht_sensor`, `test_ir_beko`, `test_controller`, etc.). All are registered with CTest.
@@ -95,7 +108,7 @@ Each firmware provides separate test executables per module (`test_storage`, `te
 - Deploy to ESP32, connect to local MQTT broker, verify messages appear.
 - Start broker: `docker run --name mosquitto -p 1883:1883 eclipse-mosquitto`
 
-**CI**: The GitHub Actions workflow builds all firmwares using `secrets-template` across board variants (esp32, esp32s2, esp32s3) to verify compilation.
+**CI**: The GitHub Actions workflow builds all firmwares using `secrets-template` across board variants (esp32, esp32s2, esp32s3) to verify compilation, then runs the host unit-test suite for each firmware.
 
 ### secrets.h fields
 
@@ -143,7 +156,7 @@ Each firmware provides separate test executables per module (`test_storage`, `te
 
   | State | Action | Limit |
   |---|---|---|
-  | `CONN_WIFI_WAITING` | Poll `WiFi.status()` each tick | 30 polls ≈ 30 s |
+  | `CONN_WIFI_WAITING` | Poll `WiFi.status()` every 2 s | 45 polls ≈ 90 s |
   | `CONN_REGISTERING` | One HTTP POST attempt every 10 s | 3 attempts |
   | `CONN_MQTT_TRYING` | One `mqtt_try_connect_once()` every 5 s | 10 attempts |
   | `CONN_ONLINE` | Health check only | — |
@@ -200,7 +213,7 @@ The `SSL` define in `secrets.h` controls whether connections use TLS. It's check
 
 ## CI
 
-GitHub Actions workflow (`.github/workflows/run-build.yml`) builds all 7 firmwares across the ESP32 matrix (esp32, esp32s2, esp32s3) using `secrets-template` as a stand-in for `secrets.h`.
+GitHub Actions workflow (`.github/workflows/run-build.yml`) builds all 7 firmwares across the ESP32 matrix (esp32, esp32s2, esp32s3) using `secrets-template` as a stand-in for `secrets.h`, and runs all host CTest suites.
 
 ## Code Style
 
@@ -245,5 +258,7 @@ To add a new device:
    - `mqtt_callback()`: handle commands (empty for sensors, implements control logic for controllers)
    - `buildFeatures()`: define device capabilities as JSON array
 5. Add the device to `.github/workflows/run-build.yml` build matrix.
-6. Create `tests/` with a `CMakeLists.txt` and mocks — copy the closest existing firmware's `tests/` directory as a starting point, then add device-specific test files.
-7. Test compilation: `arduino-cli compile --fqbn esp32:esp32:esp32 ./<device_name>.ino`
+6. Add the device to the `FIRMWARES` array in `build-all.sh`.
+7. Create `tests/` with a `CMakeLists.txt` and mocks — copy the closest existing firmware's `tests/` directory as a starting point, then add device-specific test files.
+8. Test compilation: `arduino-cli compile --fqbn esp32:esp32:esp32 ./<device_name>.ino`
+9. Run the local aggregate check: `./build-all.sh --test-only` and, when Arduino CLI is installed, `./build-all.sh --build-only`.

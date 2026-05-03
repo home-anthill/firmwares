@@ -1,6 +1,6 @@
 # Changelog — Code Quality, Bug Fixes & Security Improvements
 
-All changes applied uniformly across all 8 firmware directories (`dht-light`, `barometer`, `airquality-pir`, `power-outage`, `ac-beko`, `ac-lg`, `thermostat`) unless noted.
+All changes applied uniformly across all 7 firmware directories (`dht-light`, `barometer`, `airquality-pir`, `power-outage`, `ac-beko`, `ac-lg`, `thermostat`) unless noted.
 
 ---
 
@@ -86,7 +86,7 @@ Three compounding problems:
 
 | State | Action | Limit |
 |---|---|---|
-| `CONN_WIFI_WAITING` | Poll `WiFi.status()` each tick | 30 polls ≈ 30 s |
+| `CONN_WIFI_WAITING` | Poll `WiFi.status()` every 2 s | 45 polls ≈ 90 s |
 | `CONN_REGISTERING` | One HTTP POST attempt every 10 s | 3 attempts |
 | `CONN_MQTT_TRYING` | One `mqtt_try_connect_once()` every 5 s | 10 attempts |
 | `CONN_ONLINE` | Health check only | — |
@@ -103,6 +103,16 @@ New thermostat-specific helpers:
 - `wifi_start_connect()` — non-blocking `WiFi.begin()`; `wifi_populate_mac()` — reads MAC once up.
 - `mqtt_try_connect_once()` — single attempt, no internal retry or delay.
 - `register_secure_server_once()` / `register_insecure_server_once()` — single HTTP attempt, no retry, no delay, no `ESP.restart()`. Share a private `register_once_impl()` helper; the original blocking `register_secure_server()` / `register_insecure_server()` are unchanged for other firmwares.
+
+---
+
+## Build & CI Tooling
+
+**Repo-wide local verification script — `build-all.sh`**
+Added a root-level script that prepares missing `secrets.h` files from `secrets-template`, builds all 7 firmwares with Arduino CLI, and runs every host CTest suite. It supports `--build-only`, `--test-only`, and `--clean-tests` for narrower local runs.
+
+**Host unit tests in CI — `.github/workflows/run-build.yml`**
+The GitHub Actions workflow now includes a separate host unit-test job that configures, builds, and runs each firmware's CMake/CTest suite in addition to the ESP32 compile matrix.
 
 ---
 

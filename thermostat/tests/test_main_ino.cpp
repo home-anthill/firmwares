@@ -36,8 +36,11 @@
 
 // --- Globals defined in wifi_handler.cpp and mqtt_handler.cpp ---------------
 
-// SSL=true in thermostat/secrets.h → wifi_handler.h declares 'extern WiFiClientSecure wifi_client'
+#if SSL == true
 WiFiClientSecure wifi_client;
+#else
+WiFiClient wifi_client;
+#endif
 PubSubClient mqtt_client;
 
 // --- wifi_handler -----------------------------------------------------------
@@ -47,7 +50,9 @@ void wifi_start_connect()        {}
 void wifi_connect(char* mac)     { strncpy(mac, "aa:bb:cc:dd:ee:ff", 17); mac[17] = '\0'; }
 void wifi_reconnect(char* /*mac*/) {}
 static int g_wifi_status = WL_CONNECTED;
+static int g_wifi_sync_time_calls = 0;
 int  wifi_get_status()           { return g_wifi_status; }
+void wifi_sync_time()            { g_wifi_sync_time_calls++; }
 
 void wifi_populate_mac(char* mac) {
   strncpy(mac, "aa:bb:cc:dd:ee:ff", 17);
@@ -241,6 +246,7 @@ protected:
     g_setpoint    = 20.0f;
     g_tolerance   =  5.0f;
     g_wifi_status = WL_CONNECTED;
+    g_wifi_sync_time_calls = 0;
     g_stored_uuid_len = 0;
     memset(g_stored_uuid, 0, sizeof(g_stored_uuid));
     conn_state = CONN_WIFI_WAITING;
@@ -500,6 +506,13 @@ TEST_F(MainInoTest, MqttCallbackDelegatesToSetConfiguration) {
   EXPECT_NE(SetConfigCapture::instance().calls[0].payload.find("setpoint"),
             std::string::npos);
   EXPECT_EQ(SetConfigCapture::instance().calls[0].length, len);
+}
+
+TEST_F(MainInoTest, WifiConnectedSyncsTimeBeforeRegistrationOrMqtt) {
+  handle_connectivity();
+
+  EXPECT_EQ(g_wifi_sync_time_calls, 1);
+  EXPECT_NE(conn_state, CONN_WIFI_WAITING);
 }
 
 TEST_F(MainInoTest, WifiPollingDoesNotBurnAttemptsBeforeRetryWindowElapses) {

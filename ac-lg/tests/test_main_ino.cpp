@@ -33,7 +33,11 @@
 
 // --- Globals defined in wifi_handler.cpp and mqtt_handler.cpp ---------------
 
+#if SSL == true
 WiFiClientSecure wifi_client;
+#else
+WiFiClient wifi_client;
+#endif
 PubSubClient     mqtt_client;
 
 // --- wifi_handler -----------------------------------------------------------

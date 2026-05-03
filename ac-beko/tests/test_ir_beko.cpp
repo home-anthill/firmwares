@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <cstring>
 #include <string>
+#include <ctime>
 
 // Mock headers first so production includes resolve to stubs.
 #include <Arduino.h>
@@ -26,19 +27,19 @@ void ir_send_command(const char* saved_device_uuid, const char* saved_mac_addres
 // Helpers
 // ---------------------------------------------------------------------------
 
-// Build a single JSON object entry (no array brackets) with correct credentials.
+// Build a single JSON object entry (no array brackets) with a valid test signature.
 static std::string validEntry(const char* featureName, const char* valueStr, const char* featureUuid = "f0") {
-  std::string s = R"({"apiToken":")";
-  s += API_TOKEN;
-  s += R"(","deviceUuid":"device-uuid-test-0000-000000000000","mac":"aa:bb:cc:dd:ee:ff","model":")";
+  std::string s = R"({"deviceUuid":"device-uuid-test-0000-000000000000","mac":"aa:bb:cc:dd:ee:ff","model":")";
   s += MODEL;
   s += R"(","featureUuid":")";
   s += featureUuid;
   s += R"(","featureName":")";
   s += featureName;
-  s += R"(","value":)";
+  s += R"(","timestamp":)";
+  s += std::to_string(time(nullptr));
+  s += R"(,"nonce":"00112233445566778899aabbccddeeff","signature":"aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899","payload":{"value":)";
   s += valueStr;
-  s += "}";
+  s += "}}";
   return s;
 }
 
@@ -105,7 +106,7 @@ TEST_F(IrBekoTest, EmptyArrayCallsSendOnce) {
 
 TEST_F(IrBekoTest, ApiTokenMismatchCausesEarlyReturn) {
   std::string payload =
-    R"([{"apiToken":"wrong-token","deviceUuid":"device-uuid-test-0000-000000000000","mac":"aa:bb:cc:dd:ee:ff","model":"ac-beko","featureUuid":"f1","featureName":"on","value":1}])";
+    R"([{"deviceUuid":"device-uuid-test-0000-000000000000","mac":"aa:bb:cc:dd:ee:ff","model":"ac-beko","featureUuid":"f1","featureName":"on","timestamp":1777630000,"nonce":"00112233445566778899aabbccddeeff","signature":"wrong-signature","payload":{"value":1}}])";
   sendCommand(payload);
 
   EXPECT_FALSE(IrCoolixMockState::instance().on_called);
@@ -114,7 +115,9 @@ TEST_F(IrBekoTest, ApiTokenMismatchCausesEarlyReturn) {
 
 TEST_F(IrBekoTest, ModelMismatchCausesEarlyReturn) {
   std::string payload =
-    std::string(R"([{"apiToken":")") + API_TOKEN + R"(","deviceUuid":"device-uuid-test-0000-000000000000","mac":"aa:bb:cc:dd:ee:ff","model":"wrong-model","featureUuid":"f1","featureName":"on","value":1}])";
+    R"([{"deviceUuid":"device-uuid-test-0000-000000000000","mac":"aa:bb:cc:dd:ee:ff","model":"wrong-model","featureUuid":"f1","featureName":"on","timestamp":)" +
+    std::to_string(time(nullptr)) +
+    R"(,"nonce":"00112233445566778899aabbccddeeff","signature":"aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899","payload":{"value":1}}])";
   sendCommand(payload);
 
   EXPECT_FALSE(IrCoolixMockState::instance().on_called);
@@ -122,7 +125,7 @@ TEST_F(IrBekoTest, ModelMismatchCausesEarlyReturn) {
 }
 
 TEST_F(IrBekoTest, NullRequiredFieldsSkipsEntryAndStillSends) {
-  // apiToken is missing — the entry should be skipped (continue), and the
+  // signature is missing — the entry should be skipped (continue), and the
   // outer ir_send_signal() at the end of the loop should still fire.
   std::string payload =
     std::string(R"([{"deviceUuid":"device-uuid-test-0000-000000000000","mac":"aa:bb:cc:dd:ee:ff","model":")") + MODEL + R"(","featureUuid":"f1","featureName":"on","value":1}])";
@@ -134,9 +137,10 @@ TEST_F(IrBekoTest, NullRequiredFieldsSkipsEntryAndStillSends) {
 
 TEST_F(IrBekoTest, WrongDeviceUuidCausesEarlyReturn) {
   std::string payload =
-      std::string(R"([{"apiToken":")") + API_TOKEN +
-      R"(","deviceUuid":"wrong-device","mac":"aa:bb:cc:dd:ee:ff","model":")" +
-      MODEL + R"(","featureUuid":"f1","featureName":"on","value":1}])";
+      std::string(R"([{"deviceUuid":"wrong-device","mac":"aa:bb:cc:dd:ee:ff","model":")") +
+      MODEL + R"(","featureUuid":"f1","featureName":"on","timestamp":)" +
+      std::to_string(time(nullptr)) +
+      R"(,"nonce":"00112233445566778899aabbccddeeff","signature":"aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899","payload":{"value":1}}])";
   sendCommand(payload);
 
   EXPECT_FALSE(IrCoolixMockState::instance().on_called);
@@ -145,9 +149,10 @@ TEST_F(IrBekoTest, WrongDeviceUuidCausesEarlyReturn) {
 
 TEST_F(IrBekoTest, WrongMacCausesEarlyReturn) {
   std::string payload =
-      std::string(R"([{"apiToken":")") + API_TOKEN +
-      R"(","deviceUuid":"device-uuid-test-0000-000000000000","mac":"11:22:33:44:55:66","model":")" +
-      MODEL + R"(","featureUuid":"f1","featureName":"on","value":1}])";
+      std::string(R"([{"deviceUuid":"device-uuid-test-0000-000000000000","mac":"11:22:33:44:55:66","model":")") +
+      MODEL + R"(","featureUuid":"f1","featureName":"on","timestamp":)" +
+      std::to_string(time(nullptr)) +
+      R"(,"nonce":"00112233445566778899aabbccddeeff","signature":"aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899","payload":{"value":1}}])";
   sendCommand(payload);
 
   EXPECT_FALSE(IrCoolixMockState::instance().on_called);

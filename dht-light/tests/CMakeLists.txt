@@ -72,6 +72,8 @@ add_executable(test_mqtt_handler
   ../mqtt_handler.cpp
 )
 
+target_compile_definitions(test_mqtt_handler PRIVATE HOME_ANTHILL_HOST_TEST)
+
 target_include_directories(test_mqtt_handler PRIVATE
   mocks   # Arduino.h, WiFi.h, PubSubClient.h stubs
   ..      # mqtt_handler.h, secrets.h

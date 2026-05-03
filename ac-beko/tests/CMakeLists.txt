@@ -72,6 +72,8 @@ add_executable(test_mqtt_handler
   ../mqtt_handler.cpp
 )
 
+target_compile_definitions(test_mqtt_handler PRIVATE HOME_ANTHILL_HOST_TEST)
+
 target_include_directories(test_mqtt_handler PRIVATE
   mocks   # Arduino.h, WiFi.h, PubSubClient.h stubs
   ..      # mqtt_handler.h, secrets.h
@@ -88,10 +90,11 @@ target_link_libraries(test_mqtt_handler
 add_executable(test_ir_beko
   test_ir_beko.cpp
   ../ir_beko.cpp
+  ../mqtt_handler.cpp
 )
 
 target_include_directories(test_ir_beko PRIVATE
-  mocks   # Arduino.h, IRremoteESP8266.h, IRac.h, IRsend.h, ir_beko.h stubs
+  mocks   # Arduino.h, IRremoteESP8266.h, IRac.h, IRsend.h, ir_beko.h, PubSubClient.h stubs
   ..      # ir_beko.h, secrets.h
 )
 
@@ -101,7 +104,7 @@ target_include_directories(test_ir_beko PRIVATE
 # String/Printable paths that conflict with the host std::string alias.
 # Arduino.h already provides the required PROGMEM/pgm_read_byte stubs and
 # the __FlashStringHelper forward declaration.
-target_compile_definitions(test_ir_beko PRIVATE ARDUINOJSON_ENABLE_PROGMEM=1)
+target_compile_definitions(test_ir_beko PRIVATE ARDUINOJSON_ENABLE_PROGMEM=1 HOME_ANTHILL_HOST_TEST)
 
 target_link_libraries(test_ir_beko
   GTest::gtest_main

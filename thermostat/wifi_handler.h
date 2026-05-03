@@ -14,6 +14,8 @@ void wifi_reconnect(char* mac_address);
 
 int wifi_get_status();
 
+void wifi_sync_time();
+
 // Non-blocking helpers for the thermostat offline-first state machine.
 // wifi_start_connect() initiates the WiFi association without blocking;
 // wifi_populate_mac() reads the MAC address once the connection is up.

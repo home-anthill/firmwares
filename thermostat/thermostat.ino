@@ -293,6 +293,7 @@ void handle_connectivity() {
   case CONN_WIFI_WAITING:
     if (wifi_get_status() == WL_CONNECTED) {
       wifi_populate_mac(mac_address);
+      wifi_sync_time();
       conn_attempts = 0;
       conn_next_attempt_ms = 0;
 

@@ -9,11 +9,16 @@
 #include <IRsend.h>
 // Import the specific implementation to use COOLIX protocol to control Beko ACs
 #include <ir_Coolix.h>
+#include <ctime>
 
 #include "secrets.h"
 
 // private functions
 void ir_send_signal();
+bool hmac_sha256_hex(const char* key, const char* message, char* out);
+
+static const long COMMAND_MAX_SKEW_SECS = 300;
+static const size_t HMAC_SHA256_HEX_LEN = 64;
 
 static bool payload_matches_registered_feature(JsonArray saved_features,
                                                const char* feature_uuid,
@@ -29,6 +34,62 @@ static bool payload_matches_registered_feature(JsonArray saved_features,
     }
   }
   return false;
+}
+
+static bool signature_equals(const char* expected, const char* actual) {
+  if (expected == nullptr || actual == nullptr ||
+      strlen(expected) != HMAC_SHA256_HEX_LEN ||
+      strlen(actual) != HMAC_SHA256_HEX_LEN) {
+    return false;
+  }
+  uint8_t diff = 0;
+  for (size_t i = 0; i < HMAC_SHA256_HEX_LEN; i++) {
+    diff |= static_cast<uint8_t>(expected[i] ^ actual[i]);
+  }
+  return diff == 0;
+}
+
+static bool verify_command_signature(JsonObject mqttFeature) {
+  const char* deviceUuidval  = mqttFeature["deviceUuid"];
+  const char* macval         = mqttFeature["mac"];
+  const char* modelval       = mqttFeature["model"];
+  const char* featureUuidval = mqttFeature["featureUuid"];
+  const char* featureNameval = mqttFeature["featureName"];
+  const char* nonceval       = mqttFeature["nonce"];
+  const char* signatureval   = mqttFeature["signature"];
+  long timestampval          = mqttFeature["timestamp"] | 0L;
+  JsonObject payloadObj      = mqttFeature["payload"];
+
+  if (deviceUuidval == nullptr || macval == nullptr || modelval == nullptr ||
+      featureUuidval == nullptr || featureNameval == nullptr ||
+      nonceval == nullptr || signatureval == nullptr ||
+      timestampval <= 0 || payloadObj.isNull()) {
+    Serial.println("ir_send_command - skipping entry with missing signed command field");
+    return false;
+  }
+
+  long now = static_cast<long>(time(nullptr));
+  if (now <= 0 || labs(now - timestampval) > COMMAND_MAX_SKEW_SECS) {
+    Serial.println("ir_send_command - command timestamp outside allowed window");
+    return false;
+  }
+
+  char payload_json[96];
+  serializeJson(payloadObj, payload_json, sizeof(payload_json));
+  char signed_payload[512];
+  snprintf(signed_payload, sizeof(signed_payload), "%s\n%s\n%s\n%s\n%s\n%ld\n%s\n%s",
+           deviceUuidval, macval, modelval, featureUuidval, featureNameval,
+           timestampval, nonceval, payload_json);
+  char expected_signature[65];
+  if (!hmac_sha256_hex(API_TOKEN, signed_payload, expected_signature)) {
+    Serial.println("ir_send_command - failed to verify command signature");
+    return false;
+  }
+  if (!signature_equals(expected_signature, signatureval)) {
+    Serial.println("ir_send_command - command signature mismatch");
+    return false;
+  }
+  return true;
 }
 
 // ------------------------------------------------------
@@ -79,23 +140,25 @@ void ir_send_command(const char* saved_device_uuid,
   JsonArray mqttFeatures = doc.as<JsonArray>();
   for (size_t i = 0; i < mqttFeatures.size(); i++) {
     JsonObject mqttFeature = mqttFeatures[i];
-    const char* apiTokenval    = mqttFeature["apiToken"];
     const char* deviceUuidval  = mqttFeature["deviceUuid"];
     const char* macval         = mqttFeature["mac"];
     const char* modelval       = mqttFeature["model"];
     const char* featureUuidval = mqttFeature["featureUuid"];
     const char* featureNameval = mqttFeature["featureName"];
-    float valueval             = mqttFeature["value"];
+    JsonObject payloadObj      = mqttFeature["payload"];
+    float valueval             = payloadObj["value"];
 
     // Validate required fields before use
-    if (apiTokenval == nullptr || deviceUuidval == nullptr ||
-        macval == nullptr || modelval == nullptr ||
-        featureUuidval == nullptr || featureNameval == nullptr) {
+    if (deviceUuidval == nullptr || macval == nullptr || modelval == nullptr ||
+        featureUuidval == nullptr || featureNameval == nullptr || payloadObj.isNull()) {
       Serial.println("ir_send_command - skipping entry with null required field");
       continue;
     }
-    if (strcmp(apiTokenval, API_TOKEN) != 0 || strcmp(modelval, MODEL) != 0) {
-      Serial.println("ir_send_command - apiToken or model mismatch, ignoring command");
+    if (!verify_command_signature(mqttFeature)) {
+      return;
+    }
+    if (strcmp(modelval, MODEL) != 0) {
+      Serial.println("ir_send_command - model mismatch, ignoring command");
       return;
     }
     if (strcmp(deviceUuidval, saved_device_uuid) != 0 ||
@@ -109,7 +172,6 @@ void ir_send_command(const char* saved_device_uuid,
       return;
     }
 
-    Serial.printf("ir_send_command - apiTokenval: %s\n", apiTokenval);
     Serial.printf("ir_send_command - deviceUuidval: %s\n", deviceUuidval ? deviceUuidval : "(null)");
     Serial.printf("ir_send_command - macval: %s\n", macval ? macval : "(null)");
     Serial.printf("ir_send_command - modelval: %s\n", modelval);

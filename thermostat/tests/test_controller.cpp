@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <cstring>
 #include <cstdio>
+#include <ctime>
 
 // Mock headers first so production includes resolve to stubs.
 #include <Arduino.h>
@@ -15,19 +16,19 @@
 // Helpers
 // ---------------------------------------------------------------------------
 
-// Build a single JSON object entry (no array brackets) with correct credentials.
+// Build a single JSON object entry (no array brackets) with a valid test signature.
 static std::string validEntry(const char* featureName, const char* valueStr, const char* featureUuid = "f0") {
-  std::string s = R"({"apiToken":")";
-  s += API_TOKEN;
-  s += R"(","deviceUuid":"device-uuid-test-0000-000000000000","mac":"aa:bb:cc:dd:ee:ff","model":")";
+  std::string s = R"({"deviceUuid":"device-uuid-test-0000-000000000000","mac":"aa:bb:cc:dd:ee:ff","model":")";
   s += MODEL;
   s += R"(","featureUuid":")";
   s += featureUuid;
   s += R"(","featureName":")";
   s += featureName;
-  s += R"(","value":)";
+  s += R"(","timestamp":)";
+  s += std::to_string(time(nullptr));
+  s += R"(,"nonce":"00112233445566778899aabbccddeeff","signature":"aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899","payload":{"value":)";
   s += valueStr;
-  s += "}";
+  s += "}}";
   return s;
 }
 
@@ -113,7 +114,7 @@ TEST_F(ControllerTest, WrongModelIsRejected) {
 
 TEST_F(ControllerTest, WrongApiTokenIsRejected) {
   std::string payload =
-    std::string(R"([{"apiToken":"wrong-token","deviceUuid":"device-uuid-test-0000-000000000000","mac":"aa:bb:cc:dd:ee:ff","model":")") + MODEL + R"(","featureUuid":"f1","featureName":"setpoint","value":22}])";
+    std::string(R"([{"deviceUuid":"device-uuid-test-0000-000000000000","mac":"aa:bb:cc:dd:ee:ff","model":")") + MODEL + R"(","featureUuid":"f1","featureName":"setpoint","timestamp":1777630000,"nonce":"00112233445566778899aabbccddeeff","signature":"wrong-signature","payload":{"value":22}}])";
   sendConfig(payload);
   EXPECT_FLOAT_EQ(get_setpoint(), 20.0f);  // unchanged
 }

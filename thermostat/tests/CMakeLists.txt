@@ -72,6 +72,8 @@ add_executable(test_mqtt_handler
   ../mqtt_handler.cpp
 )
 
+target_compile_definitions(test_mqtt_handler PRIVATE HOME_ANTHILL_HOST_TEST)
+
 target_include_directories(test_mqtt_handler PRIVATE
   mocks   # Arduino.h, WiFi.h, PubSubClient.h stubs
   ..      # mqtt_handler.h, secrets.h
@@ -131,14 +133,15 @@ add_executable(test_controller
   test_controller.cpp
   ../controller.cpp
   ../storage.cpp       # get_setpoint/get_tolerance call storage_get_feature_values
+  ../mqtt_handler.cpp
 )
 
 target_include_directories(test_controller PRIVATE
-  mocks   # Arduino.h, Preferences.h, avr/pgmspace.h stubs
+  mocks   # Arduino.h, Preferences.h, PubSubClient.h, avr/pgmspace.h stubs
   ..      # controller.h, storage.h, secrets.h
 )
 
-target_compile_definitions(test_controller PRIVATE ARDUINOJSON_ENABLE_PROGMEM=1)
+target_compile_definitions(test_controller PRIVATE ARDUINOJSON_ENABLE_PROGMEM=1 HOME_ANTHILL_HOST_TEST)
 
 target_link_libraries(test_controller
   GTest::gtest_main

@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <cstring>
+#include <string>
 
 // Mock headers must precede production source includes.
 #include "WiFi.h"
@@ -47,9 +48,12 @@ TEST_F(MqttHandlerTest, NotifyValuePayloadStructure) {
 
   JsonDocument doc;
   deserializeJson(doc, MqttMockState::instance().last_publish_payload);
-  EXPECT_STREQ(doc["apiToken"].as<const char*>(), API_TOKEN);
+  EXPECT_FALSE(doc["apiToken"].is<const char*>());
   EXPECT_STREQ(doc["deviceUuid"].as<const char*>(), "dev-uuid");
   EXPECT_STREQ(doc["featureUuid"].as<const char*>(), "feature-uuid-456");
+  EXPECT_GT(doc["timestamp"].as<long>(), 0);
+  EXPECT_STREQ(doc["nonce"].as<const char*>(), "000102030405060708090a0b0c0d0e0f");
+  EXPECT_STREQ(doc["signature"].as<const char*>(), "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899");
   EXPECT_FLOAT_EQ(doc["payload"]["value"].as<float>(), 23.5f);
 }
 
@@ -59,6 +63,20 @@ TEST_F(MqttHandlerTest, NotifyValuePayloadEncodesNegativeValue) {
   JsonDocument doc;
   deserializeJson(doc, MqttMockState::instance().last_publish_payload);
   EXPECT_FLOAT_EQ(doc["payload"]["value"].as<float>(), -5.0f);
+}
+
+TEST_F(MqttHandlerTest, NotifyValuePayloadKeepsFloatIntegerDecimalForRustCanonicalForm) {
+  mqtt_notify_value("dev-uuid", "feat-uuid", "temperature", 22.0f);
+
+  EXPECT_NE(MqttMockState::instance().last_publish_payload.find(R"("payload":{"value":22.0})"),
+            std::string::npos);
+}
+
+TEST_F(MqttHandlerTest, NotifyValuePayloadTrimsUnneededTrailingDecimalZeros) {
+  mqtt_notify_value("dev-uuid", "feat-uuid", "temperature", 22.2500f);
+
+  EXPECT_NE(MqttMockState::instance().last_publish_payload.find(R"("payload":{"value":22.25})"),
+            std::string::npos);
 }
 
 // ===========================================================================

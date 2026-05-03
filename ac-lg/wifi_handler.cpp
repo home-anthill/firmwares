@@ -3,6 +3,7 @@
 #include <WiFiClientSecure.h>
 // include http library (also required to use 'WiFiClientSecure')
 #include <HTTPClient.h>
+#include <time.h>
 
 #include "secrets.h"
 
@@ -57,6 +58,25 @@ const char* ca_cert = \
 "emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=\n" \
 "-----END CERTIFICATE-----\n";
 
+void wifi_sync_time() {
+#if defined(ARDUINO_ARCH_ESP32)
+  Serial.println("wifi_sync_time - syncing NTP time");
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  time_t now = time(nullptr);
+  int retries = 0;
+  while (now < 1700000000 && retries < 30) {
+    delay(500);
+    now = time(nullptr);
+    retries++;
+  }
+  if (now < 1700000000) {
+    Serial.println("wifi_sync_time - unable to sync NTP time");
+  } else {
+    Serial.printf("wifi_sync_time - epoch time synced: %ld\n", static_cast<long>(now));
+  }
+#endif
+}
+
 void wifi_init_ca() {
   Serial.println("wifi_init_ca - called");
   # if SSL==true
@@ -79,6 +99,7 @@ void wifi_connect(char* mac_address) {
   }
   wifi_retries = 0;
   Serial.println("\nwifi_connect - wifi connected!");
+  wifi_sync_time();
 
   IPAddress ip_address = WiFi.localIP();
   Serial.printf("wifi_connect - ip_address: %s\n", ip_address.toString());

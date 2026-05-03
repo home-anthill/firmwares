@@ -29,7 +29,7 @@ int mqtt_retries = 0;
 static const long MIN_VALID_EPOCH_SECS = 1700000000L;
 
 bool format_json_value(const char* type, float value, char* out, size_t out_len) {
-  if (!isfinite(value) || out_len == 0) {
+  if (!std::isfinite(value) || out_len == 0) {
     if (out_len > 0) {
       out[0] = '\0';
     }

@@ -13,6 +13,61 @@ bool hmac_sha256_hex(const char* key, const char* message, char* out);
 
 static const long COMMAND_MAX_SKEW_SECS = 300;
 static const size_t HMAC_SHA256_HEX_LEN = 64;
+static const size_t COMMAND_NONCE_HEX_LEN = 32;
+static const size_t RECENT_COMMAND_NONCE_COUNT = 32;
+
+struct CommandNonceEntry {
+  char nonce[COMMAND_NONCE_HEX_LEN + 1];
+  long accepted_at;
+  bool used;
+};
+
+static CommandNonceEntry recent_command_nonces[RECENT_COMMAND_NONCE_COUNT] = {};
+
+#if defined(HOME_ANTHILL_HOST_TEST)
+void reset_command_nonce_cache_for_test() {
+  memset(recent_command_nonces, 0, sizeof(recent_command_nonces));
+}
+#endif
+
+static bool claim_command_nonce(const char* nonce) {
+  if (nonce == nullptr || strlen(nonce) != COMMAND_NONCE_HEX_LEN) {
+    return false;
+  }
+
+  long now = static_cast<long>(time(nullptr));
+  if (now <= 0) {
+    return false;
+  }
+
+  int free_index = -1;
+  int oldest_index = 0;
+  long oldest_accepted_at = now;
+  for (size_t i = 0; i < RECENT_COMMAND_NONCE_COUNT; i++) {
+    CommandNonceEntry& entry = recent_command_nonces[i];
+    if (entry.used && labs(now - entry.accepted_at) > COMMAND_MAX_SKEW_SECS) {
+      entry.used = false;
+      entry.nonce[0] = '\0';
+    }
+    if (entry.used && strcmp(entry.nonce, nonce) == 0) {
+      return false;
+    }
+    if (!entry.used && free_index < 0) {
+      free_index = static_cast<int>(i);
+    }
+    if (entry.used && entry.accepted_at <= oldest_accepted_at) {
+      oldest_accepted_at = entry.accepted_at;
+      oldest_index = static_cast<int>(i);
+    }
+  }
+
+  int claim_index = free_index >= 0 ? free_index : oldest_index;
+  strncpy(recent_command_nonces[claim_index].nonce, nonce, COMMAND_NONCE_HEX_LEN + 1);
+  recent_command_nonces[claim_index].nonce[COMMAND_NONCE_HEX_LEN] = '\0';
+  recent_command_nonces[claim_index].accepted_at = now;
+  recent_command_nonces[claim_index].used = true;
+  return true;
+}
 
 // Temperature ranges
 #define TEMP_MIN 10
@@ -149,6 +204,7 @@ void set_configuration(const char* saved_device_uuid,
     const char* f_model = featureValue["model"];
     const char* f_feature_uuid = featureValue["featureUuid"];
     const char* f_feature_name = featureValue["featureName"];
+    const char* f_nonce = featureValue["nonce"];
     JsonObject payloadObj = featureValue["payload"];
     float f_feature_value = payloadObj["value"];
     Serial.printf("\n---------------------------\n");
@@ -181,6 +237,10 @@ void set_configuration(const char* saved_device_uuid,
     if (!payload_matches_registered_feature(saved_features, f_feature_uuid,
                                             f_feature_name)) {
       Serial.println("set_configuration - error feature_uuid is not registered for this device");
+      return;
+    }
+    if (!claim_command_nonce(f_nonce)) {
+      Serial.println("set_configuration - replayed command nonce, ignoring command");
       return;
     }
     if (strcmp(f_feature_name, "setpoint") == 0) {

@@ -46,6 +46,12 @@ Fixed by binding command execution to the registered device identity and feature
 
 The `.ino` MQTT callbacks for those controller firmwares were updated to pass the saved UUID, current MAC, and registered features into the command handlers. Added host-side regression tests covering rejection of wrong `deviceUuid`, wrong `mac`, wrong `featureUuid`, and mismatched `featureUuid`/`featureName` combinations.
 
+**Signed MQTT command replay protection — `thermostat/`, `ac-lg/`, `ac-beko/`**
+Controller command handlers now claim a signed nonce after HMAC, timestamp, device identity, model, and feature validation pass, but before executing side effects. Each firmware keeps a 32-entry in-memory nonce cache with timestamps and rejects duplicate nonces within `COMMAND_MAX_SKEW_SECS`, preventing a captured valid on/off or thermostat command from being replayed during the freshness window.
+
+**Telemetry signatures bind feature name — all `mqtt_handler.cpp`**
+Outbound telemetry signatures now include the feature name/type in the canonical HMAC input: `deviceUuid\nfeatureUuid\nfeatureName\ntimestamp\nnonce\npayloadJson`. This prevents a captured valid sensor payload from being accepted under a different MQTT feature topic.
+
 ---
 
 ## Crash & Recovery

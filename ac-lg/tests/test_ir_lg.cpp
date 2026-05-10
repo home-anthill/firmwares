@@ -22,13 +22,15 @@ void ir_init();
 void ir_send_command(const char* saved_device_uuid, const char* saved_mac_address,
                      JsonArray saved_features, char* topic, uint8_t* payload,
                      unsigned int length);
+void reset_command_nonce_cache_for_test();
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 // Build a single JSON object entry (no array brackets) with a valid test signature.
-static std::string validEntry(const char* featureName, const char* valueStr, const char* featureUuid = "f0") {
+static std::string validEntry(const char* featureName, const char* valueStr, const char* featureUuid = "f0",
+                              const char* nonce = "00112233445566778899aabbccddeeff") {
   std::string s = R"({"deviceUuid":"device-uuid-test-0000-000000000000","mac":"aa:bb:cc:dd:ee:ff","model":")";
   s += MODEL;
   s += R"(","featureUuid":")";
@@ -37,7 +39,9 @@ static std::string validEntry(const char* featureName, const char* valueStr, con
   s += featureName;
   s += R"(","timestamp":)";
   s += std::to_string(time(nullptr));
-  s += R"(,"nonce":"00112233445566778899aabbccddeeff","signature":"aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899","payload":{"value":)";
+  s += R"(,"nonce":")";
+  s += nonce;
+  s += R"(","signature":"aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899","payload":{"value":)";
   s += valueStr;
   s += "}}";
   return s;
@@ -79,7 +83,10 @@ static void sendCommand(const std::string& json) {
 
 class IrLgTest : public ::testing::Test {
 protected:
-  void SetUp() override { IrLgMockState::reset(); }
+  void SetUp() override {
+    IrLgMockState::reset();
+    reset_command_nonce_cache_for_test();
+  }
 };
 
 // ===========================================================================
@@ -217,6 +224,15 @@ TEST_F(IrLgTest, SetpointInRangeCallsSetTemp) {
   EXPECT_EQ(IrLgMockState::instance().send_count, 1);
 }
 
+TEST_F(IrLgTest, DuplicateCommandNonceIsRejected) {
+  sendCommand("[" + validEntry("setpoint", "22", "f2") + "]");
+  sendCommand("[" + validEntry("setpoint", "24", "f2") + "]");
+
+  EXPECT_TRUE(IrLgMockState::instance().settemp_called);
+  EXPECT_FLOAT_EQ(IrLgMockState::instance().last_temp, 22.0f);
+  EXPECT_EQ(IrLgMockState::instance().send_count, 1);
+}
+
 TEST_F(IrLgTest, SetpointAtMinBoundaryCallsSetTemp) {
   sendCommand("[" + validEntry("setpoint", "18", "f2") + "]");  // TEMP_MIN = 18
   EXPECT_TRUE(IrLgMockState::instance().settemp_called);
@@ -324,10 +340,10 @@ TEST_F(IrLgTest, FanSpeedUnsupportedValueDoesNotCallSetFan) {
 TEST_F(IrLgTest, MultipleFeaturesAllAppliedWithSingleSend) {
   // on=1, setpoint=24, mode=1(Cool), fanSpeed=2(Med) — all in one message.
   std::string payload = "[" +
-    validEntry("on",       "1",  "f1") + "," +
-    validEntry("setpoint", "24", "f2") + "," +
-    validEntry("mode",     "1",  "f3") + "," +
-    validEntry("fanSpeed", "2",  "f4") + "]";
+    validEntry("on",       "1",  "f1", "00112233445566778899aabbccddeeff") + "," +
+    validEntry("setpoint", "24", "f2", "10112233445566778899aabbccddeeff") + "," +
+    validEntry("mode",     "1",  "f3", "20112233445566778899aabbccddeeff") + "," +
+    validEntry("fanSpeed", "2",  "f4", "30112233445566778899aabbccddeeff") + "]";
   sendCommand(payload);
 
   EXPECT_TRUE(IrLgMockState::instance().on_called);

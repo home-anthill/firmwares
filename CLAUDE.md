@@ -8,6 +8,8 @@ This is a monorepo of Arduino/ESP32 firmwares for the **home-anthill** IoT platf
 
 All firmwares target **ESP32** boards (esp32, esp32s2, esp32s3) and share a common architecture pattern.
 
+Outbound telemetry is signed with HMAC-SHA256 over `deviceUuid\nfeatureUuid\nfeatureName\ntimestamp\nnonce\npayloadJson`. Keep this canonical format aligned with `consumer` and `online-receiver`; do not remove the feature name from the signed material.
+
 ## Quick Start
 
 ### Setup
@@ -143,10 +145,12 @@ Each firmware provides separate test executables per module (`test_storage`, `te
 - No `TimeAlarms`; purely event-driven via MQTT messages
 - `mqtt_callback()` receives JSON commands and invokes IR remote sending (`ir_send_command`)
 - Each uses `IRremoteESP8266` with device-specific IR protocols (COOLIX for Beko, LG protocol for LG)
+- Signed command replay protection: after HMAC, device identity, model, and feature validation pass, controllers claim the signed nonce in a 32-entry in-memory nonce cache and reject duplicates within `COMMAND_MAX_SKEW_SECS` before executing IR changes.
 
 **Thermostat** — hybrid sensor + controller:
 - Reads temperature (MCP9600 thermocouple via I2C) every 10s via alarm, publishes to MQTT
 - Receives MQTT commands to set configuration (setpoint, tolerance)
+- Signed command replay protection: after HMAC, device identity, model, and feature validation pass, the thermostat claims the signed nonce in a 32-entry in-memory nonce cache and rejects duplicates within `COMMAND_MAX_SKEW_SECS` before changing configuration.
 - Drives physical GPIO outputs (HEAT, COLD, FAN, PUMP) using hysteretic control logic
 - Has an OLED display module (SSD1306 128x32 via I2C) — `display.cpp/h`
 - Extended `storage.cpp` with `storage_get_feature_values()` / `storage_set_feature_values()` for persisting controller state (`"featureValues"` key in Preferences)
@@ -204,8 +208,8 @@ The server responds:
 - Online topic: `online/<device_uuid>/features/<feature_uuid>`
 
 **Subscribe** (controller commands): `devices/<uuid>/values`
-- Payload for thermostat: JSON array of `[{apiToken, deviceUuid, mac, model, featureUuid, featureName, value}]`
-- Validated against `MODEL` and `API_TOKEN` defines before applying
+- Payload for thermostat/controller command topics: signed JSON entries carrying `apiToken`, `deviceUuid`, `mac`, `model`, `featureUuid`, `featureName`, `timestamp`, `nonce`, `signature`, and `value`
+- Validated against HMAC signature, timestamp skew, `MODEL`, `API_TOKEN`, device UUID, MAC, and registered feature identity before applying; accepted nonces are cached to block replayed signed commands
 
 ### SSL conditional compilation
 

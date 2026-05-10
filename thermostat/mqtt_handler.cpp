@@ -173,7 +173,7 @@ void mqtt_notify_value(const char* device_uuid, const char* feature_uuid, const 
     return;
   }
   char signed_payload[256];
-  int signed_payload_len = snprintf(signed_payload, sizeof(signed_payload), "%s\n%s\n%ld\n%s\n%s", device_uuid, feature_uuid, timestamp, nonce, payload_json);
+  int signed_payload_len = snprintf(signed_payload, sizeof(signed_payload), "%s\n%s\n%s\n%ld\n%s\n%s", device_uuid, feature_uuid, type, timestamp, nonce, payload_json);
   if (signed_payload_len < 0 || static_cast<size_t>(signed_payload_len) >= sizeof(signed_payload)) {
     Serial.println("mqtt_notify_value - signed payload truncated, skipping publish");
     return;

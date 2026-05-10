@@ -12,12 +12,15 @@
 #include "storage.h"
 #include "controller.h"
 
+void reset_command_nonce_cache_for_test();
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 // Build a single JSON object entry (no array brackets) with a valid test signature.
-static std::string validEntry(const char* featureName, const char* valueStr, const char* featureUuid = "f0") {
+static std::string validEntry(const char* featureName, const char* valueStr, const char* featureUuid = "f0",
+                              const char* nonce = "00112233445566778899aabbccddeeff") {
   std::string s = R"({"deviceUuid":"device-uuid-test-0000-000000000000","mac":"aa:bb:cc:dd:ee:ff","model":")";
   s += MODEL;
   s += R"(","featureUuid":")";
@@ -26,7 +29,9 @@ static std::string validEntry(const char* featureName, const char* valueStr, con
   s += featureName;
   s += R"(","timestamp":)";
   s += std::to_string(time(nullptr));
-  s += R"(,"nonce":"00112233445566778899aabbccddeeff","signature":"aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899","payload":{"value":)";
+  s += R"(,"nonce":")";
+  s += nonce;
+  s += R"(","signature":"aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899","payload":{"value":)";
   s += valueStr;
   s += "}}";
   return s;
@@ -63,6 +68,7 @@ class ControllerTest : public ::testing::Test {
 protected:
   void SetUp() override {
     Preferences::reset();
+    reset_command_nonce_cache_for_test();
   }
 };
 
@@ -160,6 +166,13 @@ TEST_F(ControllerTest, SetpointInRangeIsStored) {
   EXPECT_FLOAT_EQ(get_setpoint(), 22.0f);
 }
 
+TEST_F(ControllerTest, DuplicateCommandNonceIsRejected) {
+  sendConfig("[" + validEntry("setpoint", "22", "f1") + "]");
+  sendConfig("[" + validEntry("setpoint", "23", "f1") + "]");
+
+  EXPECT_FLOAT_EQ(get_setpoint(), 22.0f);
+}
+
 TEST_F(ControllerTest, SetpointAtMinBoundaryIsAccepted) {
   sendConfig("[" + validEntry("setpoint", "10", "f1") + "]");
   EXPECT_FLOAT_EQ(get_setpoint(), 10.0f);
@@ -209,7 +222,9 @@ TEST_F(ControllerTest, ToleranceAboveMaxIsRejected) {
 // ===========================================================================
 
 TEST_F(ControllerTest, BothSetpointAndToleranceInSinglePayload) {
-  std::string payload = "[" + validEntry("setpoint", "18", "f1") + "," + validEntry("tolerance", "2", "f2") + "]";
+  std::string payload = "[" +
+                        validEntry("setpoint", "18", "f1", "00112233445566778899aabbccddeeff") + "," +
+                        validEntry("tolerance", "2", "f2", "10112233445566778899aabbccddeeff") + "]";
   sendConfig(payload);
 
   EXPECT_FLOAT_EQ(get_setpoint(),  18.0f);

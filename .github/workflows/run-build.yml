@@ -55,8 +55,7 @@ jobs:
           arduino-cli lib update-index
  
           # common libs
-          arduino-cli lib install "ArduinoJson"@7.4.2
-          arduino-cli lib install "HttpClient"@2.2.0
+          arduino-cli lib install "ArduinoJson"@7.4.3
           arduino-cli lib install "PubSubClient"@2.8.0
 
           # libs for all sensors
@@ -74,7 +73,7 @@ jobs:
           arduino-cli lib install "IRremoteESP8266"@2.9.0
 
           # specific libs for thermostat
-          arduino-cli lib install "Adafruit GFX Library"@1.12.5
+          arduino-cli lib install "Adafruit GFX Library"@1.12.6
           arduino-cli lib install "Adafruit SSD1306"@2.5.16
           arduino-cli lib install "Adafruit BusIO"@1.17.4
           arduino-cli lib install "Adafruit MCP9600 Library"@2.0.4

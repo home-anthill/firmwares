@@ -134,29 +134,29 @@ JsonDocument buildFeatures() {
   JsonDocument root;
   JsonArray array = root.to<JsonArray>();
 
-  JsonObject temperature = array.add<JsonObject>();
-  temperature["type"] = "sensor";
-  temperature["name"] = "temperature";
-  temperature["enable"] = true;
-  temperature["order"] = 1;
-  temperature["unit"] = "°C";
-  JsonObject temperatureSpec = temperature["spec"].to<JsonObject>();
-  temperatureSpec["format"] = "float";
-  temperatureSpec["min"] = -40; // specified in DHT22 doc
-  temperatureSpec["max"] = 80; // specified in DHT22 doc
-  temperatureSpec["step"] = 0.05; // specified in DHT22 doc
-
   JsonObject humidity = array.add<JsonObject>();
   humidity["type"] = "sensor";
   humidity["name"] = "humidity";
   humidity["enable"] = true;
-  humidity["order"] = 2;
+  humidity["order"] = 1;
   humidity["unit"] = "%";
   JsonObject humiditySpec = humidity["spec"].to<JsonObject>();
   humiditySpec["format"] = "float";
   humiditySpec["min"] = 0;
   humiditySpec["max"] = 100;
   humiditySpec["step"] = 2.5; // specified in DHT22 doc
+
+  JsonObject temperature = array.add<JsonObject>();
+  temperature["type"] = "sensor";
+  temperature["name"] = "temperature";
+  temperature["enable"] = true;
+  temperature["order"] = 2;
+  temperature["unit"] = "°C";
+  JsonObject temperatureSpec = temperature["spec"].to<JsonObject>();
+  temperatureSpec["format"] = "float";
+  temperatureSpec["min"] = -40; // specified in DHT22 doc
+  temperatureSpec["max"] = 80; // specified in DHT22 doc
+  temperatureSpec["step"] = 0.05; // specified in DHT22 doc
 
   JsonObject light = array.add<JsonObject>();
   light["type"] = "sensor";

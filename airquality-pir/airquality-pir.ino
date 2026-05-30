@@ -125,7 +125,7 @@ JsonDocument buildFeatures() {
   JsonDocument root;
   JsonArray array = root.to<JsonArray>();
 
-  JsonDocument airquality = array.add<JsonObject>();
+  JsonObject airquality = array.add<JsonObject>();
   airquality["type"] = "sensor";
   airquality["name"] = "airquality";
   airquality["enable"] = true;
@@ -137,7 +137,7 @@ JsonDocument buildFeatures() {
   airqualitySpec["max"] = 3;
   airqualitySpec["step"] = 1;
 
-  JsonDocument motion = array.add<JsonObject>();
+  JsonObject motion = array.add<JsonObject>();
   motion["type"] = "sensor";
   motion["name"] = "motion";
   motion["enable"] = true;

@@ -60,7 +60,7 @@ JsonDocument buildFeatures() {
   JsonDocument root;
   JsonArray array = root.to<JsonArray>();
 
-  JsonDocument on = array.add<JsonObject>();
+  JsonObject on = array.add<JsonObject>();
   on["type"] = "controller";
   on["name"] = "on";
   on["enable"] = true;
@@ -69,7 +69,7 @@ JsonDocument buildFeatures() {
   JsonObject onSpec = on["spec"].to<JsonObject>();
   onSpec["format"] = "bool";
   
-  JsonDocument setpoint = array.add<JsonObject>();
+  JsonObject setpoint = array.add<JsonObject>();
   setpoint["type"] = "controller";
   setpoint["name"] = "setpoint";
   setpoint["enable"] = true;
@@ -82,7 +82,7 @@ JsonDocument buildFeatures() {
   setpointSpec["step"] = 1;
   setpointSpec["list"].to<JsonArray>();
 
-  JsonDocument mode = array.add<JsonObject>();
+  JsonObject mode = array.add<JsonObject>();
   mode["type"] = "controller";
   mode["name"] = "mode";
   mode["enable"] = true;
@@ -107,7 +107,7 @@ JsonDocument buildFeatures() {
   modeItem4["value"] = "4";
   modeItem4["text"] = "dry";
 
-  JsonDocument fanSpeed = array.add<JsonObject>();
+  JsonObject fanSpeed = array.add<JsonObject>();
   fanSpeed["type"] = "controller";
   fanSpeed["name"] = "fanSpeed";
   fanSpeed["enable"] = true;

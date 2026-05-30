@@ -136,7 +136,7 @@ JsonDocument buildFeatures() {
 
   JsonObject temperature = array.add<JsonObject>();
   temperature["type"] = "sensor";
-  temperature["name"]s = "temperature";
+  temperature["name"] = "temperature";
   temperature["enable"] = true;
   temperature["order"] = 1;
   temperature["unit"] = "°C";

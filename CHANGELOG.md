@@ -1,8 +1,17 @@
 # Changelog
 
+## 5.0.0
+
+### Features
+
+- add device feature spec support
+
+
+## 4.0.0
+
 Changes apply across all 7 firmware directories (`dht-light`, `barometer`, `airquality-pir`, `power-outage`, `ac-beko`, `ac-lg`, `thermostat`) unless a narrower scope is listed.
 
-## Features
+### Features
 
 - Added `build-all.sh` to prepare missing `secrets.h` files from `secrets-template`, build all firmwares with Arduino CLI, and run host CTest suites. Supports `--build-only`, `--test-only`, and `--clean-tests`.
 - Added thermostat offline-first connectivity:
@@ -18,7 +27,7 @@ Changes apply across all 7 firmware directories (`dht-light`, `barometer`, `airq
   - `register_insecure_server_once()`
 - Kept the original blocking thermostat registration functions unchanged for other firmwares.
 
-## Bug fixes
+### Bug fixes
 
 - Fixed `build_register_payload()` returning a pointer to a stack buffer by requiring a caller-owned output buffer and size.
 - Fixed unbounded recursive registration retries by converting retry handling to an iterative loop with a 10-attempt limit and restart after exhaustion.
@@ -41,7 +50,7 @@ Changes apply across all 7 firmware directories (`dht-light`, `barometer`, `airq
 - Fixed unsafe `featureUuid` copying by using bounded copy, null termination, and null guards.
 - Fixed DHT humidity log format string from `"%.2f %\n"` to `"%.2f %%\n"`.
 
-## Security fixes
+### Security fixes
 
 - Bound inbound controller commands to device identity and feature identity:
   - `thermostat`, `ac-lg`, and `ac-beko` now require matching `deviceUuid`, device MAC, and valid `featureUuid`/`featureName`.
@@ -53,18 +62,18 @@ Changes apply across all 7 firmware directories (`dht-light`, `barometer`, `airq
   - HMAC input is now `deviceUuid\nfeatureUuid\nfeatureName\ntimestamp\nnonce\npayloadJson`.
   - Prevents reusing a captured sensor payload under a different feature topic.
 
-## Idiomatic issues
+### Idiomatic issues
 
 - Migrated ArduinoJson `StaticJsonDocument` and `DynamicJsonDocument` usages to `JsonDocument`.
 - Renamed typo `featureNamelval` to `featureNameval` in `ac-beko/ir_beko.cpp` and `ac-lg/ir_lg.cpp`.
 - Corrected `mqtt_subscribe()` log text from the publish message to the subscribe message.
 - Corrected WiFi retry comment from "100 retries" to "300 retries".
 
-## Chores
+### Chores
 
 - Added GitHub Actions host unit-test job to configure, build, and run each firmware CMake/CTest suite alongside the ESP32 compile matrix.
 
-## Tests
+### Tests
 
 - Added GoogleTest-based host unit tests for all 7 firmware directories.
 - Added CMake/CTest test builds under each firmware's `tests/` directory.

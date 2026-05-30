@@ -124,20 +124,28 @@ void mqtt_callback(char* topic, uint8_t* payload, unsigned int length) {
 JsonDocument buildFeatures() {
   JsonDocument root;
   JsonArray array = root.to<JsonArray>();
-  JsonDocument f1;
-  f1["type"] = "sensor";
-  f1["name"] = "airquality";
-  f1["enable"] = true;
-  f1["order"] = 1;
-  f1["unit"] = "-";
-  array.add(f1);
-  JsonDocument f2;
-  f2["type"] = "sensor";
-  f2["name"] = "motion";
-  f2["enable"] = true;
-  f2["order"] = 2;
-  f2["unit"] = "-";
-  array.add(f2);
+
+  JsonDocument airquality = array.add<JsonObject>();
+  airquality["type"] = "sensor";
+  airquality["name"] = "airquality";
+  airquality["enable"] = true;
+  airquality["order"] = 1;
+  airquality["unit"] = "-";
+  JsonObject airqualitySpec = airquality["spec"].to<JsonObject>();
+  airqualitySpec["format"] = "int";
+  airqualitySpec["min"] = 0;
+  airqualitySpec["max"] = 3;
+  airqualitySpec["step"] = 1;
+
+  JsonDocument motion = array.add<JsonObject>();
+  motion["type"] = "sensor";
+  motion["name"] = "motion";
+  motion["enable"] = true;
+  motion["order"] = 2;
+  motion["unit"] = "-";
+  JsonObject motionSpec = motion["spec"].to<JsonObject>();
+  motionSpec["format"] = "bool";
+
   return root;
 }
 

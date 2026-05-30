@@ -111,20 +111,31 @@ void mqtt_callback(char* topic, uint8_t* payload, unsigned int length) {
 JsonDocument buildFeatures() {
   JsonDocument root;
   JsonArray array = root.to<JsonArray>();
-  JsonDocument f1;
-  f1["type"] = "sensor";
-  f1["name"] = "airpressure";
-  f1["enable"] = true;
-  f1["order"] = 1;
-  f1["unit"] = "hPa";
-  array.add(f1);
-  JsonDocument f2;
-  f2["type"] = "sensor";
-  f2["name"] = "temperature";
-  f2["enable"] = true;
-  f2["order"] = 2;
-  f2["unit"] = "°C";
-  array.add(f2);
+
+  JsonObject airpressure = array.add<JsonObject>();
+  airpressure["type"] = "sensor";
+  airpressure["name"] = "airpressure";
+  airpressure["enable"] = true;
+  airpressure["order"] = 1;
+  airpressure["unit"] = "hPa";
+  JsonObject airpressureSpec = airpressure["spec"].to<JsonObject>();
+  airpressureSpec["format"] = "float";
+  airpressureSpec["min"] = 3000;
+  airpressureSpec["max"] = 1200;
+  airpressureSpec["step"] = 0.0002;
+
+  JsonObject temperature = array.add<JsonObject>();
+  temperature["type"] = "sensor";
+  temperature["name"] = "temperature";
+  temperature["enable"] = true;
+  temperature["order"] = 2;
+  temperature["unit"] = "°C";
+  JsonObject temperatureSpec = temperature["spec"].to<JsonObject>();
+  temperatureSpec["format"] = "float";
+  temperatureSpec["min"] = -40;
+  temperatureSpec["max"] = 85;
+  temperatureSpec["step"] = 0.5;
+
   return root;
 }
 

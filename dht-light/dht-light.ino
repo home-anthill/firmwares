@@ -133,27 +133,43 @@ void mqtt_callback(char* topic, uint8_t* payload, unsigned int length) {
 JsonDocument buildFeatures() {
   JsonDocument root;
   JsonArray array = root.to<JsonArray>();
-  JsonDocument f1;
-  f1["type"] = "sensor";
-  f1["name"] = "humidity";
-  f1["enable"] = true;
-  f1["order"] = 1;
-  f1["unit"] = "%";
-  array.add(f1);
-  JsonDocument f2;
-  f2["type"] = "sensor";
-  f2["name"] = "temperature";
-  f2["enable"] = true;
-  f2["order"] = 2;
-  f2["unit"] = "°C";
-  array.add(f2);
-  JsonDocument f3;
-  f3["type"] = "sensor";
-  f3["name"] = "light";
-  f3["enable"] = true;
-  f3["order"] = 3;
-  f3["unit"] = "lux";
-  array.add(f3);
+
+  JsonObject temperature = array.add<JsonObject>();
+  temperature["type"] = "sensor";
+  temperature["name"]s = "temperature";
+  temperature["enable"] = true;
+  temperature["order"] = 1;
+  temperature["unit"] = "°C";
+  JsonObject temperatureSpec = temperature["spec"].to<JsonObject>();
+  temperatureSpec["format"] = "float";
+  temperatureSpec["min"] = -40; // specified in DHT22 doc
+  temperatureSpec["max"] = 80; // specified in DHT22 doc
+  temperatureSpec["step"] = 0.05; // specified in DHT22 doc
+
+  JsonObject humidity = array.add<JsonObject>();
+  humidity["type"] = "sensor";
+  humidity["name"] = "humidity";
+  humidity["enable"] = true;
+  humidity["order"] = 2;
+  humidity["unit"] = "%";
+  JsonObject humiditySpec = humidity["spec"].to<JsonObject>();
+  humiditySpec["format"] = "float";
+  humiditySpec["min"] = 0;
+  humiditySpec["max"] = 100;
+  humiditySpec["step"] = 2.5; // specified in DHT22 doc
+
+  JsonObject light = array.add<JsonObject>();
+  light["type"] = "sensor";
+  light["name"] = "light";
+  light["enable"] = true;
+  light["order"] = 3;
+  light["unit"] = "lux";
+  JsonObject lightSpec = light["spec"].to<JsonObject>();
+  lightSpec["format"] = "int";
+  lightSpec["min"] = 0;
+  lightSpec["max"] = 40000; // specified in TSL2561 doc
+  lightSpec["step"] = 1;
+
   return root;
 }
 

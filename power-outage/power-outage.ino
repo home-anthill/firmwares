@@ -88,13 +88,16 @@ void mqtt_callback(char* topic, uint8_t* payload, unsigned int length) {
 JsonDocument buildFeatures() {
   JsonDocument root;
   JsonArray array = root.to<JsonArray>();
-  JsonDocument f1;
-  f1["type"] = "sensor";
-  f1["name"] = "online";
-  f1["enable"] = true;
-  f1["order"] = 1;
-  f1["unit"] = "-";
-  array.add(f1);
+
+  JsonObject online = array.add<JsonObject>();
+  online["type"] = "sensor";
+  online["name"] = "online";
+  online["enable"] = true;
+  online["order"] = 1;
+  online["unit"] = "-";
+  JsonObject onlineSpec = online["spec"].to<JsonObject>();
+  onlineSpec["format"] = "bool";
+
   return root;
 }
 

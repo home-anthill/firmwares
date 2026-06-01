@@ -252,6 +252,27 @@ TEST_F(MainInoTest, BuildFeaturesHasCorrectFieldsPerEntry) {
   EXPECT_EQ(arr[1]["order"].as<int>(), 2);
 }
 
+TEST_F(MainInoTest, BuildFeaturesIncludesAdmissionSpecs) {
+  JsonDocument result = buildFeatures();
+  JsonArray    arr    = result.as<JsonArray>();
+
+  JsonObject airqualitySpec = arr[0]["spec"].as<JsonObject>();
+  ASSERT_FALSE(airqualitySpec.isNull());
+  EXPECT_STREQ(airqualitySpec["format"].as<const char*>(), "int");
+  EXPECT_FLOAT_EQ(airqualitySpec["min"].as<float>(), 0.0f);
+  EXPECT_FLOAT_EQ(airqualitySpec["max"].as<float>(), 3.0f);
+  EXPECT_FLOAT_EQ(airqualitySpec["step"].as<float>(), 1.0f);
+  EXPECT_TRUE(airqualitySpec["list"].isNull());
+
+  JsonObject motionSpec = arr[1]["spec"].as<JsonObject>();
+  ASSERT_FALSE(motionSpec.isNull());
+  EXPECT_STREQ(motionSpec["format"].as<const char*>(), "bool");
+  EXPECT_TRUE(motionSpec["min"].isNull());
+  EXPECT_TRUE(motionSpec["max"].isNull());
+  EXPECT_TRUE(motionSpec["step"].isNull());
+  EXPECT_TRUE(motionSpec["list"].isNull());
+}
+
 // =============================================================================
 // read_airquality_sensor_value
 // =============================================================================

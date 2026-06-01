@@ -225,6 +225,19 @@ TEST_F(MainInoTest, BuildFeaturesHasCorrectFieldsPerEntry) {
   EXPECT_EQ(arr[0]["order"].as<int>(), 1);
 }
 
+TEST_F(MainInoTest, BuildFeaturesIncludesAdmissionSpecs) {
+  JsonDocument result = buildFeatures();
+  JsonArray    arr    = result.as<JsonArray>();
+
+  JsonObject onlineSpec = arr[0]["spec"].as<JsonObject>();
+  ASSERT_FALSE(onlineSpec.isNull());
+  EXPECT_STREQ(onlineSpec["format"].as<const char*>(), "bool");
+  EXPECT_TRUE(onlineSpec["min"].isNull());
+  EXPECT_TRUE(onlineSpec["max"].isNull());
+  EXPECT_TRUE(onlineSpec["step"].isNull());
+  EXPECT_TRUE(onlineSpec["list"].isNull());
+}
+
 // =============================================================================
 // send_online_status
 // =============================================================================

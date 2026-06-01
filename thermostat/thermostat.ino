@@ -134,27 +134,43 @@ void mqtt_callback(char *topic, uint8_t *payload, unsigned int length) {
 JsonDocument buildFeatures() {
   JsonDocument root;
   JsonArray array = root.to<JsonArray>();
-  JsonDocument f1;
-  f1["type"] = "controller";
-  f1["name"] = "setpoint";
-  f1["enable"] = true;
-  f1["order"] = 1;
-  f1["unit"] = "°C";
-  array.add(f1);
-  JsonDocument f2;
-  f2["type"] = "controller";
-  f2["name"] = "tolerance";
-  f2["enable"] = true;
-  f2["order"] = 2;
-  f2["unit"] = "°C";
-  array.add(f2);
-  JsonDocument f3;
-  f3["type"] = "sensor";
-  f3["name"] = "temperature";
-  f3["enable"] = true;
-  f3["order"] = 3;
-  f3["unit"] = "°C";
-  array.add(f3);
+
+  JsonObject setpoint = array.add<JsonObject>();
+  setpoint["type"] = "controller";
+  setpoint["name"] = "setpoint";
+  setpoint["enable"] = true;
+  setpoint["order"] = 1;
+  setpoint["unit"] = "°C";
+  JsonObject setpointSpec = setpoint["spec"].to<JsonObject>();
+  setpointSpec["format"] = "float";
+  setpointSpec["min"] = 10;
+  setpointSpec["max"] = 30;
+  setpointSpec["step"] = 0.5;
+
+  JsonObject tolerance = array.add<JsonObject>();
+  tolerance["type"] = "controller";
+  tolerance["name"] = "tolerance";
+  tolerance["enable"] = true;
+  tolerance["order"] = 2;
+  tolerance["unit"] = "°C";
+  JsonObject toleranceSpec = tolerance["spec"].to<JsonObject>();
+  toleranceSpec["format"] = "float";
+  toleranceSpec["min"] = 0;
+  toleranceSpec["max"] = 10;
+  toleranceSpec["step"] = 0.5;
+
+  JsonObject temperature = array.add<JsonObject>();
+  temperature["type"] = "sensor";
+  temperature["name"] = "temperature";
+  temperature["enable"] = true;
+  temperature["order"] = 3;
+  temperature["unit"] = "°C";
+  JsonObject temperatureSpec = temperature["spec"].to<JsonObject>();
+  temperatureSpec["format"] = "float";
+  temperatureSpec["min"] = -40; // TODO is this right???
+  temperatureSpec["max"] = 200; // TODO is this right???
+  temperatureSpec["step"] = 0.01; // TODO is this right???
+
   return root;
 }
 

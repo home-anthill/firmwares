@@ -120,7 +120,7 @@ JsonDocument buildFeatures() {
   airpressure["unit"] = "hPa";
   JsonObject airpressureSpec = airpressure["spec"].to<JsonObject>();
   airpressureSpec["format"] = "float";
-  airpressureSpec["min"] = 3000;
+  airpressureSpec["min"] = 300;
   airpressureSpec["max"] = 1200;
   airpressureSpec["step"] = 0.0002;
 

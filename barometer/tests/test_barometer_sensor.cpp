@@ -44,11 +44,11 @@ TEST_F(BarometerSensorTest, GetTemperatureReturnsNanOnReadFailure) {
 // barometer_get_airpressure
 // ===========================================================================
 
-TEST_F(BarometerSensorTest, GetAirpressureReturnsPressureDividedByThousand) {
-  // Production code divides raw Pa reading by 1000.
+TEST_F(BarometerSensorTest, GetAirpressureReturnsPressureDividedByHundred) {
+  // Production code converts raw Pa readings to hPa.
   Dps3xxMockState::instance().pressure_value   = 101325.0f;
   Dps3xxMockState::instance().pressure_success = true;
-  EXPECT_FLOAT_EQ(barometer_get_airpressure(), 101325.0f / 1000.0f);
+  EXPECT_FLOAT_EQ(barometer_get_airpressure(), 101325.0f / 100.0f);
 }
 
 TEST_F(BarometerSensorTest, GetAirpressureReturnsNanOnReadFailure) {
@@ -63,7 +63,7 @@ TEST_F(BarometerSensorTest, GetAirpressureHandlesVariousRawValues) {
   EXPECT_FLOAT_EQ(barometer_get_airpressure(), 0.0f);
 
   Dps3xxMockState::instance().pressure_value = 50000.0f;
-  EXPECT_FLOAT_EQ(barometer_get_airpressure(), 50.0f);
+  EXPECT_FLOAT_EQ(barometer_get_airpressure(), 500.0f);
 }
 
 // ===========================================================================
@@ -76,7 +76,7 @@ TEST_F(BarometerSensorTest, SensorReadingsAreIndependent) {
   Dps3xxMockState::instance().pressure_value   = 101325.0f;
   Dps3xxMockState::instance().pressure_success = true;
   EXPECT_TRUE(std::isnan(barometer_get_temperature()));
-  EXPECT_FLOAT_EQ(barometer_get_airpressure(), 101325.0f / 1000.0f);
+  EXPECT_FLOAT_EQ(barometer_get_airpressure(), 101325.0f / 100.0f);
 
   // Airpressure failure must not affect temperature.
   Dps3xxMockState::reset();

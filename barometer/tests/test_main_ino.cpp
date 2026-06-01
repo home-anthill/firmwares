@@ -240,6 +240,27 @@ TEST_F(MainInoTest, BuildFeaturesHasCorrectFieldsPerEntry) {
   EXPECT_EQ(arr[1]["order"].as<int>(), 2);
 }
 
+TEST_F(MainInoTest, BuildFeaturesIncludesAdmissionSpecs) {
+  JsonDocument result = buildFeatures();
+  JsonArray    arr    = result.as<JsonArray>();
+
+  JsonObject airpressureSpec = arr[0]["spec"].as<JsonObject>();
+  ASSERT_FALSE(airpressureSpec.isNull());
+  EXPECT_STREQ(airpressureSpec["format"].as<const char*>(), "float");
+  EXPECT_FLOAT_EQ(airpressureSpec["min"].as<float>(), 300.0f);
+  EXPECT_FLOAT_EQ(airpressureSpec["max"].as<float>(), 1200.0f);
+  EXPECT_FLOAT_EQ(airpressureSpec["step"].as<float>(), 0.0002f);
+  EXPECT_TRUE(airpressureSpec["list"].isNull());
+
+  JsonObject temperatureSpec = arr[1]["spec"].as<JsonObject>();
+  ASSERT_FALSE(temperatureSpec.isNull());
+  EXPECT_STREQ(temperatureSpec["format"].as<const char*>(), "float");
+  EXPECT_FLOAT_EQ(temperatureSpec["min"].as<float>(), -40.0f);
+  EXPECT_FLOAT_EQ(temperatureSpec["max"].as<float>(), 85.0f);
+  EXPECT_FLOAT_EQ(temperatureSpec["step"].as<float>(), 0.5f);
+  EXPECT_TRUE(temperatureSpec["list"].isNull());
+}
+
 // =============================================================================
 // read_barometer_sensor_value
 // =============================================================================

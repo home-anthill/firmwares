@@ -263,21 +263,21 @@ void ir_send_command(const char* saved_device_uuid,
     }
     if (strcmp(featureNameval, "mode") == 0) {
       switch (cmd) {
-        case 1: Serial.println("ir_send_command - setting mode to Cool"); ac.setMode(MODE_COOL); break;
+        case 0: Serial.println("ir_send_command - setting mode to Cool"); ac.setMode(MODE_COOL); break;
+        case 1: Serial.println("ir_send_command - setting mode to Dry");  ac.setMode(MODE_DRY);  break;
         case 2: Serial.println("ir_send_command - setting mode to Auto"); ac.setMode(MODE_AUTO); break;
         case 3: Serial.println("ir_send_command - setting mode to Heat"); ac.setMode(MODE_HEAT); break;
         case 4: Serial.println("ir_send_command - setting mode to Fan");  ac.setMode(MODE_FAN);  break;
-        case 5: Serial.println("ir_send_command - setting mode to Dry");  ac.setMode(MODE_DRY);  break;
         default: Serial.println("ir_send_command - cannot set mode. Unsupported value!"); break;
       }
     }
     if (strcmp(featureNameval, "fanSpeed") == 0) {
       switch (cmd) {
-        case 1: Serial.println("ir_send_command - setting fan speed to Min");   ac.setFan(FAN_MIN);   break;
+        case 0: Serial.println("ir_send_command - setting fan speed to Auto0"); ac.setFan(FAN_AUTO0); break;
+        case 1: Serial.println("ir_send_command - setting fan speed to Max");   ac.setFan(FAN_MAX);   break;
         case 2: Serial.println("ir_send_command - setting fan speed to Med");   ac.setFan(FAN_MED);   break;
-        case 3: Serial.println("ir_send_command - setting fan speed to Max");   ac.setFan(FAN_MAX);   break;
-        case 4: Serial.println("ir_send_command - setting fan speed to Auto");  ac.setFan(FAN_AUTO);  break;
-        case 5: Serial.println("ir_send_command - setting fan speed to Auto0"); ac.setFan(FAN_AUTO0); break;
+        case 4: Serial.println("ir_send_command - setting fan speed to Min");   ac.setFan(FAN_MIN);   break;
+        case 5: Serial.println("ir_send_command - setting fan speed to Auto");  ac.setFan(FAN_AUTO);  break;
         default: Serial.println("ir_send_command - cannot set fan speed. Unsupported fan value!"); break;
       }
     }

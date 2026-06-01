@@ -262,10 +262,15 @@ TEST_F(IrBekoTest, SetpointAboveMaxIsSkipped) {
 // Feature: "mode"
 // ===========================================================================
 
-TEST_F(IrBekoTest, ModeOneSetsModeCool) {
-  sendCommand("[" + validEntry("mode", "1", "f3") + "]");
+TEST_F(IrBekoTest, ModeZeroSetsModeCool) {
+  sendCommand("[" + validEntry("mode", "0", "f3") + "]");
   EXPECT_TRUE(IrCoolixMockState::instance().setmode_called);
   EXPECT_EQ(IrCoolixMockState::instance().last_mode, static_cast<int>(kCoolixCool));
+}
+
+TEST_F(IrBekoTest, ModeOneSetsModeDry) {
+  sendCommand("[" + validEntry("mode", "1", "f3") + "]");
+  EXPECT_EQ(IrCoolixMockState::instance().last_mode, static_cast<int>(kCoolixDry));
 }
 
 TEST_F(IrBekoTest, ModeTwoSetsModeAuto) {
@@ -283,11 +288,6 @@ TEST_F(IrBekoTest, ModeFourSetsModeFan) {
   EXPECT_EQ(IrCoolixMockState::instance().last_mode, static_cast<int>(kCoolixFan));
 }
 
-TEST_F(IrBekoTest, ModeFiveSetsModeDry) {
-  sendCommand("[" + validEntry("mode", "5", "f3") + "]");
-  EXPECT_EQ(IrCoolixMockState::instance().last_mode, static_cast<int>(kCoolixDry));
-}
-
 TEST_F(IrBekoTest, ModeUnsupportedValueDoesNotCallSetMode) {
   sendCommand("[" + validEntry("mode", "99", "f3") + "]");
   EXPECT_FALSE(IrCoolixMockState::instance().setmode_called);
@@ -299,35 +299,34 @@ TEST_F(IrBekoTest, ModeUnsupportedValueDoesNotCallSetMode) {
 // Feature: "fanSpeed"
 // ===========================================================================
 
-TEST_F(IrBekoTest, FanSpeedFourSetsMinFan) {
-  sendCommand("[" + validEntry("fanSpeed", "1", "f4") + "]");
-  EXPECT_EQ(IrCoolixMockState::instance().last_fan, static_cast<int>(kCoolixFanMin));
-}
-
-TEST_F(IrBekoTest, FanSpeedThreeSetsMedFan) {
-  sendCommand("[" + validEntry("fanSpeed", "2", "f4") + "]");
-  EXPECT_EQ(IrCoolixMockState::instance().last_fan, static_cast<int>(kCoolixFanMed));
-}
-
-TEST_F(IrBekoTest, FanSpeedTwoSetsMaxFan) {
-  sendCommand("[" + validEntry("fanSpeed", "3", "f4") + "]");
-  EXPECT_EQ(IrCoolixMockState::instance().last_fan, static_cast<int>(kCoolixFanMax));
-}
-
-TEST_F(IrBekoTest, FanSpeedFourSetsAutoFan) {
-  sendCommand("[" + validEntry("fanSpeed", "4", "f4") + "]");
-  EXPECT_EQ(IrCoolixMockState::instance().last_fan, static_cast<int>(kCoolixFanAuto));
-}
-
-TEST_F(IrBekoTest, FanSpeedOneSetAuto0Fan) {
-  sendCommand("[" + validEntry("fanSpeed", "5", "f4") + "]");
+TEST_F(IrBekoTest, FanSpeedZeroSetsAuto0Fan) {
+  sendCommand("[" + validEntry("fanSpeed", "0", "f4") + "]");
   EXPECT_TRUE(IrCoolixMockState::instance().setfan_called);
   EXPECT_EQ(IrCoolixMockState::instance().last_fan, static_cast<int>(kCoolixFanAuto0));
 }
 
-TEST_F(IrBekoTest, FanSpeedFiveIsNotSupported) {
-  // cmd=6 hits the "Auto0 not supported" branch — setFan must NOT be called.
-  sendCommand("[" + validEntry("fanSpeed", "6", "f4") + "]");
+TEST_F(IrBekoTest, FanSpeedOneSetsMaxFan) {
+  sendCommand("[" + validEntry("fanSpeed", "1", "f4") + "]");
+  EXPECT_EQ(IrCoolixMockState::instance().last_fan, static_cast<int>(kCoolixFanMax));
+}
+
+TEST_F(IrBekoTest, FanSpeedTwoSetsMedFan) {
+  sendCommand("[" + validEntry("fanSpeed", "2", "f4") + "]");
+  EXPECT_EQ(IrCoolixMockState::instance().last_fan, static_cast<int>(kCoolixFanMed));
+}
+
+TEST_F(IrBekoTest, FanSpeedFourSetsAutoFan) {
+  sendCommand("[" + validEntry("fanSpeed", "4", "f4") + "]");
+  EXPECT_EQ(IrCoolixMockState::instance().last_fan, static_cast<int>(kCoolixFanMin));
+}
+
+TEST_F(IrBekoTest, FanSpeedFiveSetsAutoFan) {
+  sendCommand("[" + validEntry("fanSpeed", "5", "f4") + "]");
+  EXPECT_EQ(IrCoolixMockState::instance().last_fan, static_cast<int>(kCoolixFanAuto));
+}
+
+TEST_F(IrBekoTest, FanSpeedThreeIsNotSupported) {
+  sendCommand("[" + validEntry("fanSpeed", "3", "f4") + "]");
   EXPECT_FALSE(IrCoolixMockState::instance().setfan_called);
   EXPECT_EQ(IrCoolixMockState::instance().send_count, 1);
 }
@@ -343,11 +342,11 @@ TEST_F(IrBekoTest, FanSpeedUnsupportedValueDoesNotCallSetFan) {
 // ===========================================================================
 
 TEST_F(IrBekoTest, MultipleFeaturesAllAppliedWithSingleSend) {
-  // on=1, setpoint=24, mode=1(Cool), fanSpeed=2(Med) — all in one message.
+  // on=1, setpoint=24, mode=0(Cool), fanSpeed=2(Med) - all in one message.
   std::string payload = "[" +
     validEntry("on",       "1",  "f1", "00112233445566778899aabbccddeeff") + "," +
     validEntry("setpoint", "24", "f2", "10112233445566778899aabbccddeeff") + "," +
-    validEntry("mode",     "1",  "f3", "20112233445566778899aabbccddeeff") + "," +
+    validEntry("mode",     "0",  "f3", "20112233445566778899aabbccddeeff") + "," +
     validEntry("fanSpeed", "2",  "f4", "30112233445566778899aabbccddeeff") + "]";
   sendCommand(payload);
 

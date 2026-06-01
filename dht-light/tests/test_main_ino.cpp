@@ -264,6 +264,35 @@ TEST_F(MainInoTest, BuildFeaturesHasCorrectFieldsPerEntry) {
   EXPECT_EQ(arr[2]["order"].as<int>(), 3);
 }
 
+TEST_F(MainInoTest, BuildFeaturesIncludesAdmissionSpecs) {
+  JsonDocument result = buildFeatures();
+  JsonArray    arr    = result.as<JsonArray>();
+
+  JsonObject humiditySpec = arr[0]["spec"].as<JsonObject>();
+  ASSERT_FALSE(humiditySpec.isNull());
+  EXPECT_STREQ(humiditySpec["format"].as<const char*>(), "float");
+  EXPECT_FLOAT_EQ(humiditySpec["min"].as<float>(), 0.0f);
+  EXPECT_FLOAT_EQ(humiditySpec["max"].as<float>(), 100.0f);
+  EXPECT_FLOAT_EQ(humiditySpec["step"].as<float>(), 2.5f);
+  EXPECT_TRUE(humiditySpec["list"].isNull());
+
+  JsonObject temperatureSpec = arr[1]["spec"].as<JsonObject>();
+  ASSERT_FALSE(temperatureSpec.isNull());
+  EXPECT_STREQ(temperatureSpec["format"].as<const char*>(), "float");
+  EXPECT_FLOAT_EQ(temperatureSpec["min"].as<float>(), -40.0f);
+  EXPECT_FLOAT_EQ(temperatureSpec["max"].as<float>(), 80.0f);
+  EXPECT_FLOAT_EQ(temperatureSpec["step"].as<float>(), 0.05f);
+  EXPECT_TRUE(temperatureSpec["list"].isNull());
+
+  JsonObject lightSpec = arr[2]["spec"].as<JsonObject>();
+  ASSERT_FALSE(lightSpec.isNull());
+  EXPECT_STREQ(lightSpec["format"].as<const char*>(), "int");
+  EXPECT_FLOAT_EQ(lightSpec["min"].as<float>(), 0.0f);
+  EXPECT_FLOAT_EQ(lightSpec["max"].as<float>(), 40000.0f);
+  EXPECT_FLOAT_EQ(lightSpec["step"].as<float>(), 1.0f);
+  EXPECT_TRUE(lightSpec["list"].isNull());
+}
+
 // =============================================================================
 // read_dht_sensor_value
 // =============================================================================

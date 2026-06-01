@@ -35,8 +35,8 @@ float barometer_get_airpressure() {
   Serial.println("barometer_get_airpressure - called");
   float pressure;
   if (Dps3xxPressureSensor.measurePressureOnce(pressure) == 0) {
-    pressure = pressure / 1000;
-    Serial.printf("barometer_get_airpressure - pressure = %.2f hPAa\n", pressure);
+    pressure = pressure / 100;
+    Serial.printf("barometer_get_airpressure - pressure = %.2f hPa\n", pressure);
     return pressure;
   }
   return NAN;

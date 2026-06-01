@@ -77,10 +77,9 @@ JsonDocument buildFeatures() {
   setpoint["unit"] = "°C";
   JsonObject setpointSpec = setpoint["spec"].to<JsonObject>();
   setpointSpec["format"] = "int";
-  setpointSpec["min"] = 17;
+  setpointSpec["min"] = 16;
   setpointSpec["max"] = 30;
   setpointSpec["step"] = 1;
-  setpointSpec["list"].to<JsonArray>();
 
   JsonObject mode = array.add<JsonObject>();
   mode["type"] = "controller";
@@ -92,20 +91,20 @@ JsonDocument buildFeatures() {
   modeSpec["format"] = "list";
   JsonArray modeList = modeSpec["list"].to<JsonArray>();
   JsonObject modeItem0 = modeList.add<JsonObject>();
-  modeItem0["value"] = "0";
-  modeItem0["text"] = "cool";
+  modeItem0["value"] = 0;
+  modeItem0["text"] = "Cool";
   JsonObject modeItem1 = modeList.add<JsonObject>();
-  modeItem1["value"] = "1";
-  modeItem1["text"] = "auto";
+  modeItem1["value"] = 1;
+  modeItem1["text"] = "Dry";
   JsonObject modeItem2 = modeList.add<JsonObject>();
-  modeItem2["value"] = "2";
-  modeItem2["text"] = "heat";
+  modeItem2["value"] = 2;
+  modeItem2["text"] = "Fan";
   JsonObject modeItem3 = modeList.add<JsonObject>();
-  modeItem3["value"] = "3";
-  modeItem3["text"] = "fan";
+  modeItem3["value"] = 3;
+  modeItem3["text"] = "Auto";
   JsonObject modeItem4 = modeList.add<JsonObject>();
-  modeItem4["value"] = "4";
-  modeItem4["text"] = "dry";
+  modeItem4["value"] = 4;
+  modeItem4["text"] = "Heat";
 
   JsonObject fanSpeed = array.add<JsonObject>();
   fanSpeed["type"] = "controller";
@@ -117,20 +116,17 @@ JsonDocument buildFeatures() {
   fanSpeedSpec["format"] = "list";
   JsonArray fanSpeedList = fanSpeedSpec["list"].to<JsonArray>();
   JsonObject fanSpeedItem0 = fanSpeedList.add<JsonObject>();
-  fanSpeedItem0["value"] = "0";
-  fanSpeedItem0["text"] = "min";
+  fanSpeedItem0["value"] = 10;
+  fanSpeedItem0["text"] = "Max";
   JsonObject fanSpeedItem1 = fanSpeedList.add<JsonObject>();
-  fanSpeedItem1["value"] = "1";
-  fanSpeedItem1["text"] = "med";
+  fanSpeedItem1["value"] = 2;
+  fanSpeedItem1["text"] = "Med";
   JsonObject fanSpeedItem2 = fanSpeedList.add<JsonObject>();
-  fanSpeedItem2["value"] = "2";
-  fanSpeedItem2["text"] = "max";
+  fanSpeedItem2["value"] = 0;
+  fanSpeedItem2["text"] = "Min";
   JsonObject fanSpeedItem3 = fanSpeedList.add<JsonObject>();
-  fanSpeedItem3["value"] = "3";
-  fanSpeedItem3["text"] = "auto";
-  JsonObject fanSpeedItem4 = fanSpeedList.add<JsonObject>();
-  fanSpeedItem4["value"] = "4";
-  fanSpeedItem4["text"] = "auto0";
+  fanSpeedItem3["value"] = 5;
+  fanSpeedItem3["text"] = "Auto";
 
   return root;
 }

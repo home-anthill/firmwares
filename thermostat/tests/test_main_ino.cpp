@@ -355,6 +355,35 @@ TEST_F(MainInoTest, BuildFeaturesHasCorrectFieldsPerEntry) {
   EXPECT_EQ(arr[2]["order"].as<int>(), 3);
 }
 
+TEST_F(MainInoTest, BuildFeaturesIncludesAdmissionSpecs) {
+  JsonDocument result = buildFeatures();
+  JsonArray    arr    = result.as<JsonArray>();
+
+  JsonObject setpointSpec = arr[0]["spec"].as<JsonObject>();
+  ASSERT_FALSE(setpointSpec.isNull());
+  EXPECT_STREQ(setpointSpec["format"].as<const char*>(), "float");
+  EXPECT_FLOAT_EQ(setpointSpec["min"].as<float>(), 10.0f);
+  EXPECT_FLOAT_EQ(setpointSpec["max"].as<float>(), 30.0f);
+  EXPECT_FLOAT_EQ(setpointSpec["step"].as<float>(), 0.5f);
+  EXPECT_TRUE(setpointSpec["list"].isNull());
+
+  JsonObject toleranceSpec = arr[1]["spec"].as<JsonObject>();
+  ASSERT_FALSE(toleranceSpec.isNull());
+  EXPECT_STREQ(toleranceSpec["format"].as<const char*>(), "float");
+  EXPECT_FLOAT_EQ(toleranceSpec["min"].as<float>(), 0.0f);
+  EXPECT_FLOAT_EQ(toleranceSpec["max"].as<float>(), 10.0f);
+  EXPECT_FLOAT_EQ(toleranceSpec["step"].as<float>(), 0.5f);
+  EXPECT_TRUE(toleranceSpec["list"].isNull());
+
+  JsonObject temperatureSpec = arr[2]["spec"].as<JsonObject>();
+  ASSERT_FALSE(temperatureSpec.isNull());
+  EXPECT_STREQ(temperatureSpec["format"].as<const char*>(), "float");
+  EXPECT_FLOAT_EQ(temperatureSpec["min"].as<float>(), -40.0f);
+  EXPECT_FLOAT_EQ(temperatureSpec["max"].as<float>(), 200.0f);
+  EXPECT_FLOAT_EQ(temperatureSpec["step"].as<float>(), 0.01f);
+  EXPECT_TRUE(temperatureSpec["list"].isNull());
+}
+
 // =============================================================================
 // read_temp_sensor_value — NaN guard
 // =============================================================================

@@ -71,9 +71,9 @@ static bool claim_command_nonce(const char* nonce) {
 
 // Temperature ranges
 #define TEMP_MIN 10
-#define TEMP_MAX 25
+#define TEMP_MAX 30
 #define TOLERANCE_MIN 0
-#define TOLERANCE_MAX 20
+#define TOLERANCE_MAX 10
 
 static bool payload_matches_registered_feature(JsonArray saved_features,
                                                const char* feature_uuid,
@@ -148,7 +148,7 @@ static bool verify_command_signature(JsonObject featureValue) {
 }
 
 static constexpr float DEFAULT_SETPOINT = 20.0f;
-static constexpr float DEFAULT_TOLERANCE = 5.0f;
+static constexpr float DEFAULT_TOLERANCE = 0.0f;
 
 float get_setpoint() {
   Serial.println("get_setpoint - called");

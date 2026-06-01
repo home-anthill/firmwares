@@ -85,7 +85,7 @@ TEST_F(ControllerTest, GetSetpointReturnsDefaultWhenNotStored) {
 // ===========================================================================
 
 TEST_F(ControllerTest, GetToleranceReturnsDefaultWhenNotStored) {
-  EXPECT_FLOAT_EQ(get_tolerance(), 5.0f);
+  EXPECT_FLOAT_EQ(get_tolerance(), 0.0f);
 }
 
 // ===========================================================================
@@ -97,14 +97,14 @@ TEST_F(ControllerTest, MalformedJsonDoesNothing) {
 
   // Defaults must be unchanged.
   EXPECT_FLOAT_EQ(get_setpoint(),  20.0f);
-  EXPECT_FLOAT_EQ(get_tolerance(),  5.0f);
+  EXPECT_FLOAT_EQ(get_tolerance(),  0.0f);
 }
 
 TEST_F(ControllerTest, EmptyArrayDoesNothing) {
   sendConfig("[]");
 
   EXPECT_FLOAT_EQ(get_setpoint(),  20.0f);
-  EXPECT_FLOAT_EQ(get_tolerance(),  5.0f);
+  EXPECT_FLOAT_EQ(get_tolerance(),  0.0f);
 }
 
 // ===========================================================================
@@ -158,7 +158,7 @@ TEST_F(ControllerTest, FeatureUuidMismatchedToFeatureNameIsRejected) {
 }
 
 // ===========================================================================
-// set_configuration — setpoint validation (TEMP_MIN=10, TEMP_MAX=25)
+// set_configuration — setpoint validation (TEMP_MIN=10, TEMP_MAX=30)
 // ===========================================================================
 
 TEST_F(ControllerTest, SetpointInRangeIsStored) {
@@ -179,8 +179,8 @@ TEST_F(ControllerTest, SetpointAtMinBoundaryIsAccepted) {
 }
 
 TEST_F(ControllerTest, SetpointAtMaxBoundaryIsAccepted) {
-  sendConfig("[" + validEntry("setpoint", "25", "f1") + "]");
-  EXPECT_FLOAT_EQ(get_setpoint(), 25.0f);
+  sendConfig("[" + validEntry("setpoint", "30", "f1") + "]");
+  EXPECT_FLOAT_EQ(get_setpoint(), 30.0f);
 }
 
 TEST_F(ControllerTest, SetpointBelowMinIsRejected) {
@@ -189,12 +189,12 @@ TEST_F(ControllerTest, SetpointBelowMinIsRejected) {
 }
 
 TEST_F(ControllerTest, SetpointAboveMaxIsRejected) {
-  sendConfig("[" + validEntry("setpoint", "26", "f1") + "]");
+  sendConfig("[" + validEntry("setpoint", "31", "f1") + "]");
   EXPECT_FLOAT_EQ(get_setpoint(), 20.0f);  // default unchanged
 }
 
 // ===========================================================================
-// set_configuration — tolerance validation (TOLERANCE_MIN=0, TOLERANCE_MAX=20)
+// set_configuration — tolerance validation (TOLERANCE_MIN=0, TOLERANCE_MAX=10)
 // ===========================================================================
 
 TEST_F(ControllerTest, ToleranceInRangeIsStored) {
@@ -208,13 +208,13 @@ TEST_F(ControllerTest, ToleranceAtMinBoundaryIsAccepted) {
 }
 
 TEST_F(ControllerTest, ToleranceAtMaxBoundaryIsAccepted) {
-  sendConfig("[" + validEntry("tolerance", "20", "f2") + "]");
-  EXPECT_FLOAT_EQ(get_tolerance(), 20.0f);
+  sendConfig("[" + validEntry("tolerance", "10", "f2") + "]");
+  EXPECT_FLOAT_EQ(get_tolerance(), 10.0f);
 }
 
 TEST_F(ControllerTest, ToleranceAboveMaxIsRejected) {
-  sendConfig("[" + validEntry("tolerance", "21", "f2") + "]");
-  EXPECT_FLOAT_EQ(get_tolerance(), 5.0f);  // default unchanged
+  sendConfig("[" + validEntry("tolerance", "11", "f2") + "]");
+  EXPECT_FLOAT_EQ(get_tolerance(), 0.0f);  // default unchanged
 }
 
 // ===========================================================================

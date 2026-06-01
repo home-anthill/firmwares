@@ -246,6 +246,65 @@ TEST_F(MainInoTest, BuildFeaturesHasCorrectFieldsPerEntry) {
   EXPECT_EQ(arr[3]["order"].as<int>(), 4);
 }
 
+TEST_F(MainInoTest, BuildFeaturesIncludesAdmissionSpecs) {
+  JsonDocument result = buildFeatures();
+  JsonArray    arr    = result.as<JsonArray>();
+
+  JsonObject onSpec = arr[0]["spec"].as<JsonObject>();
+  ASSERT_FALSE(onSpec.isNull());
+  EXPECT_STREQ(onSpec["format"].as<const char*>(), "bool");
+  EXPECT_TRUE(onSpec["min"].isNull());
+  EXPECT_TRUE(onSpec["max"].isNull());
+  EXPECT_TRUE(onSpec["step"].isNull());
+  EXPECT_TRUE(onSpec["list"].isNull());
+
+  JsonObject setpointSpec = arr[1]["spec"].as<JsonObject>();
+  ASSERT_FALSE(setpointSpec.isNull());
+  EXPECT_STREQ(setpointSpec["format"].as<const char*>(), "int");
+  EXPECT_FLOAT_EQ(setpointSpec["min"].as<float>(), 17.0f);
+  EXPECT_FLOAT_EQ(setpointSpec["max"].as<float>(), 30.0f);
+  EXPECT_FLOAT_EQ(setpointSpec["step"].as<float>(), 1.0f);
+  EXPECT_TRUE(setpointSpec["list"].isNull());
+
+  JsonObject modeSpec = arr[2]["spec"].as<JsonObject>();
+  ASSERT_FALSE(modeSpec.isNull());
+  EXPECT_STREQ(modeSpec["format"].as<const char*>(), "list");
+  EXPECT_TRUE(modeSpec["min"].isNull());
+  EXPECT_TRUE(modeSpec["max"].isNull());
+  EXPECT_TRUE(modeSpec["step"].isNull());
+  JsonArray modeList = modeSpec["list"].as<JsonArray>();
+  ASSERT_EQ(modeList.size(), 5u);
+  EXPECT_EQ(modeList[0]["value"].as<int>(), 0);
+  EXPECT_STREQ(modeList[0]["text"].as<const char*>(), "Cool");
+  EXPECT_EQ(modeList[1]["value"].as<int>(), 1);
+  EXPECT_STREQ(modeList[1]["text"].as<const char*>(), "Dry");
+  EXPECT_EQ(modeList[2]["value"].as<int>(), 2);
+  EXPECT_STREQ(modeList[2]["text"].as<const char*>(), "Auto");
+  EXPECT_EQ(modeList[3]["value"].as<int>(), 3);
+  EXPECT_STREQ(modeList[3]["text"].as<const char*>(), "Heat");
+  EXPECT_EQ(modeList[4]["value"].as<int>(), 4);
+  EXPECT_STREQ(modeList[4]["text"].as<const char*>(), "Fan");
+
+  JsonObject fanSpeedSpec = arr[3]["spec"].as<JsonObject>();
+  ASSERT_FALSE(fanSpeedSpec.isNull());
+  EXPECT_STREQ(fanSpeedSpec["format"].as<const char*>(), "list");
+  EXPECT_TRUE(fanSpeedSpec["min"].isNull());
+  EXPECT_TRUE(fanSpeedSpec["max"].isNull());
+  EXPECT_TRUE(fanSpeedSpec["step"].isNull());
+  JsonArray fanSpeedList = fanSpeedSpec["list"].as<JsonArray>();
+  ASSERT_EQ(fanSpeedList.size(), 5u);
+  EXPECT_EQ(fanSpeedList[0]["value"].as<int>(), 0);
+  EXPECT_STREQ(fanSpeedList[0]["text"].as<const char*>(), "Auto0");
+  EXPECT_EQ(fanSpeedList[1]["value"].as<int>(), 1);
+  EXPECT_STREQ(fanSpeedList[1]["text"].as<const char*>(), "Max");
+  EXPECT_EQ(fanSpeedList[2]["value"].as<int>(), 2);
+  EXPECT_STREQ(fanSpeedList[2]["text"].as<const char*>(), "Med");
+  EXPECT_EQ(fanSpeedList[3]["value"].as<int>(), 4);
+  EXPECT_STREQ(fanSpeedList[3]["text"].as<const char*>(), "Min");
+  EXPECT_EQ(fanSpeedList[4]["value"].as<int>(), 5);
+  EXPECT_STREQ(fanSpeedList[4]["text"].as<const char*>(), "Auto");
+}
+
 // =============================================================================
 // mqtt_callback — delegates to ir_send_command
 // =============================================================================

@@ -234,9 +234,9 @@ TEST_F(IrLgTest, DuplicateCommandNonceIsRejected) {
 }
 
 TEST_F(IrLgTest, SetpointAtMinBoundaryCallsSetTemp) {
-  sendCommand("[" + validEntry("setpoint", "18", "f2") + "]");  // TEMP_MIN = 18
+  sendCommand("[" + validEntry("setpoint", "16", "f2") + "]");  // TEMP_MIN = kLgAcMinTemp = 16
   EXPECT_TRUE(IrLgMockState::instance().settemp_called);
-  EXPECT_FLOAT_EQ(IrLgMockState::instance().last_temp, 18.0f);
+  EXPECT_FLOAT_EQ(IrLgMockState::instance().last_temp, 16.0f);
 }
 
 TEST_F(IrLgTest, SetpointAtMaxBoundaryCallsSetTemp) {
@@ -246,7 +246,7 @@ TEST_F(IrLgTest, SetpointAtMaxBoundaryCallsSetTemp) {
 }
 
 TEST_F(IrLgTest, SetpointBelowMinIsSkipped) {
-  sendCommand("[" + validEntry("setpoint", "17", "f2") + "]");
+  sendCommand("[" + validEntry("setpoint", "15", "f2") + "]");
   EXPECT_FALSE(IrLgMockState::instance().settemp_called);
   // Outer ir_send_signal() still fires (entry was skipped via continue).
   EXPECT_EQ(IrLgMockState::instance().send_count, 1);
@@ -262,30 +262,30 @@ TEST_F(IrLgTest, SetpointAboveMaxIsSkipped) {
 // Feature: "mode"
 // ===========================================================================
 
-TEST_F(IrLgTest, ModeOneSetsModeCool) {
-  sendCommand("[" + validEntry("mode", "1", "f3") + "]");
+TEST_F(IrLgTest, ModeZeroSetsModeCool) {
+  sendCommand("[" + validEntry("mode", "0", "f3") + "]");
   EXPECT_TRUE(IrLgMockState::instance().setmode_called);
   EXPECT_EQ(IrLgMockState::instance().last_mode, static_cast<int>(kLgAcCool));
 }
 
-TEST_F(IrLgTest, ModeTwoSetsModeAuto) {
+TEST_F(IrLgTest, ModeOneSetsModeDry) {
+  sendCommand("[" + validEntry("mode", "1", "f3") + "]");
+  EXPECT_EQ(IrLgMockState::instance().last_mode, static_cast<int>(kLgAcDry));
+}
+
+TEST_F(IrLgTest, ModeTwoSetsModeFan) {
   sendCommand("[" + validEntry("mode", "2", "f3") + "]");
-  EXPECT_EQ(IrLgMockState::instance().last_mode, static_cast<int>(kLgAcAuto));
-}
-
-TEST_F(IrLgTest, ModeThreeSetsModeHeat) {
-  sendCommand("[" + validEntry("mode", "3", "f3") + "]");
-  EXPECT_EQ(IrLgMockState::instance().last_mode, static_cast<int>(kLgAcHeat));
-}
-
-TEST_F(IrLgTest, ModeFourSetsModeFan) {
-  sendCommand("[" + validEntry("mode", "4", "f3") + "]");
   EXPECT_EQ(IrLgMockState::instance().last_mode, static_cast<int>(kLgAcFan));
 }
 
-TEST_F(IrLgTest, ModeFiveSetsModeDry) {
-  sendCommand("[" + validEntry("mode", "5", "f3") + "]");
-  EXPECT_EQ(IrLgMockState::instance().last_mode, static_cast<int>(kLgAcDry));
+TEST_F(IrLgTest, ModeThreeSetsModeAuto) {
+  sendCommand("[" + validEntry("mode", "3", "f3") + "]");
+  EXPECT_EQ(IrLgMockState::instance().last_mode, static_cast<int>(kLgAcAuto));
+}
+
+TEST_F(IrLgTest, ModeFourSetsModeHeat) {
+  sendCommand("[" + validEntry("mode", "4", "f3") + "]");
+  EXPECT_EQ(IrLgMockState::instance().last_mode, static_cast<int>(kLgAcHeat));
 }
 
 TEST_F(IrLgTest, ModeUnsupportedValueDoesNotCallSetMode) {
@@ -299,10 +299,10 @@ TEST_F(IrLgTest, ModeUnsupportedValueDoesNotCallSetMode) {
 // Feature: "fanSpeed"
 // ===========================================================================
 
-TEST_F(IrLgTest, FanSpeedOneSetsMinFan) {
-  sendCommand("[" + validEntry("fanSpeed", "1", "f4") + "]");
+TEST_F(IrLgTest, FanSpeedTenSetsMaxFan) {
+  sendCommand("[" + validEntry("fanSpeed", "10", "f4") + "]");
   EXPECT_TRUE(IrLgMockState::instance().setfan_called);
-  EXPECT_EQ(IrLgMockState::instance().last_fan, static_cast<int>(kLgAcFanLowest));
+  EXPECT_EQ(IrLgMockState::instance().last_fan, static_cast<int>(kLgAcFanHigh));
 }
 
 TEST_F(IrLgTest, FanSpeedTwoSetsMedFan) {
@@ -310,19 +310,18 @@ TEST_F(IrLgTest, FanSpeedTwoSetsMedFan) {
   EXPECT_EQ(IrLgMockState::instance().last_fan, static_cast<int>(kLgAcFanMedium));
 }
 
-TEST_F(IrLgTest, FanSpeedThreeSetsMaxFan) {
-  sendCommand("[" + validEntry("fanSpeed", "3", "f4") + "]");
-  EXPECT_EQ(IrLgMockState::instance().last_fan, static_cast<int>(kLgAcFanHigh));
+TEST_F(IrLgTest, FanSpeedZeroSetsMinFan) {
+  sendCommand("[" + validEntry("fanSpeed", "0", "f4") + "]");
+  EXPECT_EQ(IrLgMockState::instance().last_fan, static_cast<int>(kLgAcFanLowest));
 }
 
-TEST_F(IrLgTest, FanSpeedFourSetsAutoFan) {
-  sendCommand("[" + validEntry("fanSpeed", "4", "f4") + "]");
+TEST_F(IrLgTest, FanSpeedFiveSetsAutoFan) {
+  sendCommand("[" + validEntry("fanSpeed", "5", "f4") + "]");
   EXPECT_EQ(IrLgMockState::instance().last_fan, static_cast<int>(kLgAcFanAuto));
 }
 
-TEST_F(IrLgTest, FanSpeedFiveIsNotSupported) {
-  // cmd=5 hits the "Auto0 not supported" branch — setFan must NOT be called.
-  sendCommand("[" + validEntry("fanSpeed", "5", "f4") + "]");
+TEST_F(IrLgTest, FanSpeedOneIsNotSupported) {
+  sendCommand("[" + validEntry("fanSpeed", "1", "f4") + "]");
   EXPECT_FALSE(IrLgMockState::instance().setfan_called);
   EXPECT_EQ(IrLgMockState::instance().send_count, 1);
 }
@@ -338,11 +337,11 @@ TEST_F(IrLgTest, FanSpeedUnsupportedValueDoesNotCallSetFan) {
 // ===========================================================================
 
 TEST_F(IrLgTest, MultipleFeaturesAllAppliedWithSingleSend) {
-  // on=1, setpoint=24, mode=1(Cool), fanSpeed=2(Med) — all in one message.
+  // on=1, setpoint=24, mode=0(Cool), fanSpeed=2(Med) - all in one message.
   std::string payload = "[" +
     validEntry("on",       "1",  "f1", "00112233445566778899aabbccddeeff") + "," +
     validEntry("setpoint", "24", "f2", "10112233445566778899aabbccddeeff") + "," +
-    validEntry("mode",     "1",  "f3", "20112233445566778899aabbccddeeff") + "," +
+    validEntry("mode",     "0",  "f3", "20112233445566778899aabbccddeeff") + "," +
     validEntry("fanSpeed", "2",  "f4", "30112233445566778899aabbccddeeff") + "]";
   sendCommand(payload);
 

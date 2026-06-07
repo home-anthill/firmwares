@@ -3,11 +3,12 @@
 // ---------------------------------------------------------------------------
 // Arduino framework mock for host-side (native) unit test compilation.
 //
-// This header is placed on the include path BEFORE the real Arduino SDK so
-// that source files compiled for testing resolve Arduino symbols here instead
-// of needing the actual ESP32 toolchain.
-//
-// Only the symbols used by the modules under test are stubbed out.
+// Extends the base Arduino stub with:
+//   - PROGMEM / pgm_read_byte / __FlashStringHelper stubs so that ArduinoJson
+//     compiles when ARDUINOJSON_ENABLE_PROGMEM=1 is set (needed by targets
+//     that compile controller.cpp which calls DeserializationError::f_str()).
+//   - GpioMockState: records every digitalWrite() call so test_main_ino can
+//     verify HEAT/COLD/FAN/PUMP relay outputs.
 // ---------------------------------------------------------------------------
 
 #include <cstdarg>
@@ -16,17 +17,30 @@
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
+#include <map>
 #include <string>
 #include <functional>
 
+// --- Arduino PROGMEM / Flash string stubs -----------------------------------
+// ArduinoJson enables DeserializationError::f_str() when
+// ARDUINOJSON_ENABLE_PROGMEM=1 (set in CMakeLists.txt for test_controller).
+// On the host there is no real PROGMEM, so stub the required macros and type.
+#ifndef PROGMEM
+#  define PROGMEM
+#endif
+#ifndef pgm_read_byte
+#  define pgm_read_byte(addr) (*(const uint8_t *)(addr))
+#endif
+// Forward declaration matches what ArduinoJson's f_str() returns.
+class __FlashStringHelper;
+
 // --- Basic Arduino types ----------------------------------------------------
 
-using byte     = uint8_t;
-using word     = uint16_t;
-using boolean  = bool;
+using byte    = uint8_t;
+using word    = uint16_t;
+using boolean = bool;
 
-// Re-export the std::string as Arduino's String type so headers that use
-// String compile without change.
+// Re-export std::string as Arduino's String type.
 using String = std::string;
 
 // --- Math constants ---------------------------------------------------------
@@ -42,9 +56,6 @@ using std::isnan;
 using std::isinf;
 
 // --- Print / Stream ---------------------------------------------------------
-// Minimal subset of Arduino's Print/Stream hierarchy needed for ArduinoJson
-// serialisation (serializeJson / serializeJsonPretty) and deserialisation
-// (deserializeJson from a stream) to compile and run on the host.
 
 class Print {
 public:
@@ -73,7 +84,6 @@ class SerialMock : public Print {
 public:
   void begin(unsigned long /*baud*/) {}
 
-  // write() — satisfies ArduinoJson's Print concept (silently discards).
   size_t write(uint8_t /*b*/) override { return 1; }
   size_t write(const uint8_t* /*buf*/, size_t n) override { return n; }
 
@@ -82,10 +92,11 @@ public:
   void print(int v)                  { (void)v;   }
   void print(float v)                { (void)v;   }
 
-  void println(const char* msg = "")  { (void)msg; }
-  void println(const std::string& msg){ (void)msg; }
-  void println(int v)                 { (void)v;   }
-  void println(float v)               { (void)v;   }
+  void println(const char* msg = "")               { (void)msg; }
+  void println(const std::string& msg)             { (void)msg; }
+  void println(int v)                              { (void)v;   }
+  void println(float v)                            { (void)v;   }
+  void println(const __FlashStringHelper* /*msg*/) {}
 
   // Variadic printf — silently discards output in tests.
   void printf(const char* fmt, ...) { (void)fmt; }
@@ -103,20 +114,57 @@ inline EspClass ESP;
 
 // --- Time / delay -----------------------------------------------------------
 
+inline unsigned long g_mock_millis = 0UL;
+
 inline void          delay(unsigned long ms) { (void)ms; }
-inline unsigned long millis()                { return 0UL; }
+inline unsigned long millis()                { return g_mock_millis; }
 inline unsigned long micros()                { return 0UL; }
 inline void          delayMicroseconds(unsigned int us) { (void)us; }
+inline void          mock_set_millis(unsigned long ms)  { g_mock_millis = ms; }
+inline void          mock_advance_millis(unsigned long ms) { g_mock_millis += ms; }
 
 // setTime — from the Arduino Time library; no-op in tests.
 inline void setTime(int /*hr*/, int /*min*/, int /*sec*/,
                     int /*day*/, int /*mo*/,  int /*yr*/) {}
 
-// --- GPIO stubs (unused by math_utils, included for completeness) -----------
+// F() macro — on real Arduino wraps a string literal in flash memory.
+// On the host it is a no-op identity: just returns the const char* directly.
+#ifndef F
+#  define F(string_literal) (string_literal)
+#endif
+
+// --- GPIO mock with state tracking ------------------------------------------
+// GpioMockState::pin_values maps pin -> last value written via digitalWrite().
+// Reset in test SetUp() to start each test with a clean slate.
+
+inline int g_digital_read_value = 0;
+
+struct GpioMockState {
+  std::map<uint8_t, uint8_t> pin_values;
+  int digital_read_value{0};
+
+  static GpioMockState& instance() {
+    static GpioMockState s;
+    return s;
+  }
+  static void reset() {
+    instance() = GpioMockState{};
+    g_digital_read_value = 0;
+  }
+};
 
 inline void pinMode(uint8_t /*pin*/, uint8_t /*mode*/) {}
-inline void digitalWrite(uint8_t /*pin*/, uint8_t /*val*/) {}
-inline int  digitalRead(uint8_t /*pin*/) { return 0; }
+
+inline void digitalWrite(uint8_t pin, uint8_t val) {
+  GpioMockState::instance().pin_values[pin] = val;
+}
+
+inline void rgbLedWrite(uint8_t /*pin*/, uint8_t /*red*/, uint8_t /*green*/, uint8_t /*blue*/) {}
+
+inline int  digitalRead(uint8_t /*pin*/) {
+  return g_digital_read_value;
+}
+
 inline int  analogRead(uint8_t /*pin*/) { return 0; }
 
 #define INPUT  0x0

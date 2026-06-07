@@ -134,8 +134,10 @@ inline void setTime(int /*hr*/, int /*min*/, int /*sec*/,
 #endif
 
 // --- GPIO mock with state tracking ------------------------------------------
-// GpioMockState::pin_values maps pin → last value written via digitalWrite().
+// GpioMockState::pin_values maps pin -> last value written via digitalWrite().
 // Reset in test SetUp() to start each test with a clean slate.
+
+inline int g_digital_read_value = 0;
 
 struct GpioMockState {
   std::map<uint8_t, uint8_t> pin_values;
@@ -145,7 +147,10 @@ struct GpioMockState {
     static GpioMockState s;
     return s;
   }
-  static void reset() { instance() = GpioMockState{}; }
+  static void reset() {
+    instance() = GpioMockState{};
+    g_digital_read_value = 0;
+  }
 };
 
 inline void pinMode(uint8_t /*pin*/, uint8_t /*mode*/) {}
@@ -154,8 +159,10 @@ inline void digitalWrite(uint8_t pin, uint8_t val) {
   GpioMockState::instance().pin_values[pin] = val;
 }
 
+inline void rgbLedWrite(uint8_t /*pin*/, uint8_t /*red*/, uint8_t /*green*/, uint8_t /*blue*/) {}
+
 inline int  digitalRead(uint8_t /*pin*/) {
-  return GpioMockState::instance().digital_read_value;
+  return g_digital_read_value;
 }
 
 inline int  analogRead(uint8_t /*pin*/) { return 0; }

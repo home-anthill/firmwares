@@ -12,16 +12,8 @@
 
 #include <ArduinoJson.h>
 #include "secrets.h"  // provides API_TOKEN, MODEL
+#include "ir_lg_controller.h"
 
-// NOTE: ir_lg.h and ir_LG.h (the mock) differ only in case.  On macOS's
-// case-insensitive filesystem they resolve to the same file, so including
-// "ir_lg.h" here would silently pull in the mock again and leave
-// ir_send_command undeclared.  Declare the two firmware functions directly
-// instead.
-void ir_init();
-void ir_send_command(const char* saved_device_uuid, const char* saved_mac_address,
-                     JsonArray saved_features, char* topic, uint8_t* payload,
-                     unsigned int length);
 void reset_command_nonce_cache_for_test();
 
 // ---------------------------------------------------------------------------

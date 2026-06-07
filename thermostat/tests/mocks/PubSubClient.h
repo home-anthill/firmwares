@@ -8,7 +8,7 @@
 // Control publish/connect outcomes by setting the relevant bool fields.
 //
 // Usage:
-//   MqttMockState::reset();                           // clean state in SetUp
+//   MqttMockState::reset();                         // clean state in SetUp
 //   MqttMockState::instance().publish_result = false; // simulate failure
 //   // call the function under test
 //   EXPECT_EQ(MqttMockState::instance().last_publish_topic, "sensors/...");

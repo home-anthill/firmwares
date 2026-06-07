@@ -85,6 +85,44 @@ target_link_libraries(test_mqtt_handler
 )
 
 # ---------------------------------------------------------------------------
+# Test executable: feature_values
+# ---------------------------------------------------------------------------
+add_executable(test_feature_values
+  test_feature_values.cpp
+  ../feature_values.cpp
+)
+
+target_include_directories(test_feature_values PRIVATE
+  mocks
+  ..
+)
+
+target_link_libraries(test_feature_values
+  GTest::gtest_main
+  ArduinoJson
+)
+
+# ---------------------------------------------------------------------------
+# Test executable: display
+# ---------------------------------------------------------------------------
+add_executable(test_display
+  test_display.cpp
+  ../display.cpp
+)
+
+target_compile_definitions(test_display PRIVATE HOME_ANTHILL_TEST_OLED_DISPLAY)
+
+target_include_directories(test_display PRIVATE
+  mocks
+  ..
+)
+
+target_link_libraries(test_display
+  GTest::gtest_main
+  ArduinoJson
+)
+
+# ---------------------------------------------------------------------------
 # Test executable: airquality_sensor
 # ---------------------------------------------------------------------------
 add_executable(test_airquality_sensor
@@ -149,6 +187,8 @@ enable_testing()
 add_test(NAME storage_tests            COMMAND test_storage)
 add_test(NAME registration_tests       COMMAND test_registration)
 add_test(NAME mqtt_handler_tests       COMMAND test_mqtt_handler)
+add_test(NAME feature_values_tests     COMMAND test_feature_values)
+add_test(NAME display_tests            COMMAND test_display)
 add_test(NAME airquality_sensor_tests  COMMAND test_airquality_sensor)
 add_test(NAME pir_sensor_tests         COMMAND test_pir_sensor)
 add_test(NAME main_ino_tests           COMMAND test_main_ino)

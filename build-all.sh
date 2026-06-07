@@ -7,7 +7,6 @@ FIRMWARES=(
   airquality-pir
   barometer
   dht-light
-  power-outage
   ac-beko
   ac-lg
   thermostat

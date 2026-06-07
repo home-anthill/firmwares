@@ -23,6 +23,7 @@
 #include "storage.h"
 #include "dht_sensor.h"
 #include "light_sensor.h"
+#include "feature_values.h"
 
 // =============================================================================
 // Stubs — provide every external symbol that <main-project-arduino-file>.ino references.
@@ -94,6 +95,11 @@ void mqtt_notify_value(const char* device_uuid, const char* feature_uuid,
   });
 }
 
+// --- display ----------------------------------------------------------------
+
+void init_display() {}
+void update_display() {}
+
 // --- dht_sensor (controllable return values) --------------------------------
 
 static float g_dht_temp = NAN;
@@ -107,6 +113,48 @@ float dht_get_humidity()    { return g_dht_hum;  }
 static long g_light_lux = 0;
 void light_init_sensor() {}
 long light_get_value()   { return g_light_lux; }
+
+// --- feature_values ---------------------------------------------------------
+
+struct FeatureValueSetCall {
+  std::string name;
+  float value;
+};
+
+struct FeatureValueCapture {
+  std::vector<FeatureValueSetCall> set_calls;
+  int init_count{0};
+
+  static FeatureValueCapture& instance() {
+    static FeatureValueCapture s;
+    return s;
+  }
+  static void reset() { instance() = FeatureValueCapture{}; }
+};
+
+void feature_values_init(JsonArray /*features*/) {
+  FeatureValueCapture::instance().init_count++;
+}
+
+void feature_values_clear() {
+  FeatureValueCapture::reset();
+}
+
+size_t feature_values_count() {
+  return 0;
+}
+
+bool feature_values_set(const char* name, float value) {
+  FeatureValueCapture::instance().set_calls.push_back({
+    name ? name : "",
+    value
+  });
+  return true;
+}
+
+bool feature_values_get(size_t /*index*/, FeatureValue* /*value*/) {
+  return false;
+}
 
 // --- storage ----------------------------------------------------------------
 
@@ -134,8 +182,9 @@ size_t storage_set_uuid(const char* uuid) {
 
 bool         get_feature_uuid_by_name(char* featureUuid, size_t max_len, const char* name);
 JsonDocument buildFeatures();
-void         read_dht_sensor_value();
-void         read_light_sensor_value();
+void         read_and_send_dht_value();
+void         read_and_send_light_value();
+void         send_online_status();
 
 // Expose <main-project-arduino-file>.ino globals so the fixture can reset them between tests.
 extern JsonDocument doc_features;
@@ -156,6 +205,7 @@ protected:
 
     // Reset stubs.
     MqttNotifyCapture::reset();
+    FeatureValueCapture::reset();
     g_dht_temp       = NAN;
     g_dht_hum        = NAN;
     g_light_lux      = 0;
@@ -231,29 +281,30 @@ TEST_F(MainInoTest, GetFeatureUuidByNameTruncatesUuidToBufferSize) {
 // buildFeatures
 // =============================================================================
 
-TEST_F(MainInoTest, BuildFeaturesReturnsThreeFeatures) {
+TEST_F(MainInoTest, BuildFeaturesReturnsFourFeatures) {
   JsonDocument result = buildFeatures();
   JsonArray    arr    = result.as<JsonArray>();
 
-  ASSERT_EQ(arr.size(), 3u);
-  EXPECT_STREQ(arr[0]["name"].as<const char*>(), "humidity");
-  EXPECT_STREQ(arr[1]["name"].as<const char*>(), "temperature");
+  ASSERT_EQ(arr.size(), 4u);
+  EXPECT_STREQ(arr[0]["name"].as<const char*>(), "temperature");
+  EXPECT_STREQ(arr[1]["name"].as<const char*>(), "humidity");
   EXPECT_STREQ(arr[2]["name"].as<const char*>(), "light");
+  EXPECT_STREQ(arr[3]["name"].as<const char*>(), "online");
 }
 
 TEST_F(MainInoTest, BuildFeaturesHasCorrectFieldsPerEntry) {
   JsonDocument result = buildFeatures();
   JsonArray    arr    = result.as<JsonArray>();
 
-  // humidity
+  // temperature
   EXPECT_STREQ(arr[0]["type"].as<const char*>(), "sensor");
-  EXPECT_STREQ(arr[0]["unit"].as<const char*>(), "%");
+  EXPECT_STREQ(arr[0]["unit"].as<const char*>(), "°C");
   EXPECT_TRUE(arr[0]["enable"].as<bool>());
   EXPECT_EQ(arr[0]["order"].as<int>(), 1);
 
-  // temperature
+  // humidity
   EXPECT_STREQ(arr[1]["type"].as<const char*>(), "sensor");
-  EXPECT_STREQ(arr[1]["unit"].as<const char*>(), "°C");
+  EXPECT_STREQ(arr[1]["unit"].as<const char*>(), "%");
   EXPECT_TRUE(arr[1]["enable"].as<bool>());
   EXPECT_EQ(arr[1]["order"].as<int>(), 2);
 
@@ -262,27 +313,33 @@ TEST_F(MainInoTest, BuildFeaturesHasCorrectFieldsPerEntry) {
   EXPECT_STREQ(arr[2]["unit"].as<const char*>(), "lux");
   EXPECT_TRUE(arr[2]["enable"].as<bool>());
   EXPECT_EQ(arr[2]["order"].as<int>(), 3);
+
+  // online
+  EXPECT_STREQ(arr[3]["type"].as<const char*>(), "sensor");
+  EXPECT_STREQ(arr[3]["unit"].as<const char*>(), "-");
+  EXPECT_TRUE(arr[3]["enable"].as<bool>());
+  EXPECT_EQ(arr[3]["order"].as<int>(), 4);
 }
 
 TEST_F(MainInoTest, BuildFeaturesIncludesAdmissionSpecs) {
   JsonDocument result = buildFeatures();
   JsonArray    arr    = result.as<JsonArray>();
 
-  JsonObject humiditySpec = arr[0]["spec"].as<JsonObject>();
-  ASSERT_FALSE(humiditySpec.isNull());
-  EXPECT_STREQ(humiditySpec["format"].as<const char*>(), "float");
-  EXPECT_FLOAT_EQ(humiditySpec["min"].as<float>(), 0.0f);
-  EXPECT_FLOAT_EQ(humiditySpec["max"].as<float>(), 100.0f);
-  EXPECT_FLOAT_EQ(humiditySpec["step"].as<float>(), 2.5f);
-  EXPECT_TRUE(humiditySpec["list"].isNull());
-
-  JsonObject temperatureSpec = arr[1]["spec"].as<JsonObject>();
+  JsonObject temperatureSpec = arr[0]["spec"].as<JsonObject>();
   ASSERT_FALSE(temperatureSpec.isNull());
   EXPECT_STREQ(temperatureSpec["format"].as<const char*>(), "float");
   EXPECT_FLOAT_EQ(temperatureSpec["min"].as<float>(), -40.0f);
   EXPECT_FLOAT_EQ(temperatureSpec["max"].as<float>(), 80.0f);
   EXPECT_FLOAT_EQ(temperatureSpec["step"].as<float>(), 0.05f);
   EXPECT_TRUE(temperatureSpec["list"].isNull());
+
+  JsonObject humiditySpec = arr[1]["spec"].as<JsonObject>();
+  ASSERT_FALSE(humiditySpec.isNull());
+  EXPECT_STREQ(humiditySpec["format"].as<const char*>(), "float");
+  EXPECT_FLOAT_EQ(humiditySpec["min"].as<float>(), 0.0f);
+  EXPECT_FLOAT_EQ(humiditySpec["max"].as<float>(), 100.0f);
+  EXPECT_FLOAT_EQ(humiditySpec["step"].as<float>(), 2.5f);
+  EXPECT_TRUE(humiditySpec["list"].isNull());
 
   JsonObject lightSpec = arr[2]["spec"].as<JsonObject>();
   ASSERT_FALSE(lightSpec.isNull());
@@ -291,10 +348,49 @@ TEST_F(MainInoTest, BuildFeaturesIncludesAdmissionSpecs) {
   EXPECT_FLOAT_EQ(lightSpec["max"].as<float>(), 40000.0f);
   EXPECT_FLOAT_EQ(lightSpec["step"].as<float>(), 1.0f);
   EXPECT_TRUE(lightSpec["list"].isNull());
+
+  JsonObject onlineSpec = arr[3]["spec"].as<JsonObject>();
+  ASSERT_FALSE(onlineSpec.isNull());
+  EXPECT_STREQ(onlineSpec["format"].as<const char*>(), "bool");
+  EXPECT_TRUE(onlineSpec["min"].isNull());
+  EXPECT_TRUE(onlineSpec["max"].isNull());
+  EXPECT_TRUE(onlineSpec["step"].isNull());
+  EXPECT_TRUE(onlineSpec["list"].isNull());
 }
 
 // =============================================================================
-// read_dht_sensor_value
+// send_online_status
+// =============================================================================
+
+TEST_F(MainInoTest, SendOnlineStatusPublishesWhenFeatureFound) {
+  strncpy(saved_device_uuid, "device-uuid-test-0000-000000000000", 36);
+  addFeature("online", "online-uuid-0000-0000-000000000004");
+
+  send_online_status();
+
+  ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 1u);
+  EXPECT_EQ(MqttNotifyCapture::instance().calls[0].type, "online");
+  EXPECT_FLOAT_EQ(MqttNotifyCapture::instance().calls[0].value, 1.0f);
+  EXPECT_EQ(MqttNotifyCapture::instance().calls[0].device_uuid, "device-uuid-test-0000-000000000000");
+  EXPECT_EQ(MqttNotifyCapture::instance().calls[0].feature_uuid, "online-uuid-0000-0000-000000000004");
+  ASSERT_EQ(FeatureValueCapture::instance().set_calls.size(), 1u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "online");
+  EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[0].value, 1.0f);
+}
+
+TEST_F(MainInoTest, SendOnlineStatusSkipsPublishWhenFeatureNotFound) {
+  strncpy(saved_device_uuid, "device-uuid-test-0000-000000000000", 36);
+
+  send_online_status();
+
+  EXPECT_EQ(MqttNotifyCapture::instance().calls.size(), 0u);
+  ASSERT_EQ(FeatureValueCapture::instance().set_calls.size(), 1u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "online");
+  EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[0].value, 1.0f);
+}
+
+// =============================================================================
+// read_and_send_dht_value
 // =============================================================================
 
 TEST_F(MainInoTest, ReadDhtPublishesBothReadingsWhenValid) {
@@ -304,13 +400,18 @@ TEST_F(MainInoTest, ReadDhtPublishesBothReadingsWhenValid) {
   g_dht_temp = 23.5f;
   g_dht_hum  = 60.0f;
 
-  read_dht_sensor_value();
+  read_and_send_dht_value();
 
   ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 2u);
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].type, "temperature");
   EXPECT_FLOAT_EQ(MqttNotifyCapture::instance().calls[0].value, 23.5f);
   EXPECT_EQ(MqttNotifyCapture::instance().calls[1].type, "humidity");
   EXPECT_FLOAT_EQ(MqttNotifyCapture::instance().calls[1].value, 60.0f);
+  ASSERT_EQ(FeatureValueCapture::instance().set_calls.size(), 2u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "temperature");
+  EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[0].value, 23.5f);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[1].name, "humidity");
+  EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[1].value, 60.0f);
 }
 
 TEST_F(MainInoTest, ReadDhtSkipsTemperatureWhenNan) {
@@ -319,11 +420,14 @@ TEST_F(MainInoTest, ReadDhtSkipsTemperatureWhenNan) {
   g_dht_temp = NAN;   // invalid reading
   g_dht_hum  = 60.0f;
 
-  read_dht_sensor_value();
+  read_and_send_dht_value();
 
   // Only the humidity publish should occur.
   ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 1u);
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].type, "humidity");
+  ASSERT_EQ(FeatureValueCapture::instance().set_calls.size(), 1u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "humidity");
+  EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[0].value, 60.0f);
 }
 
 TEST_F(MainInoTest, ReadDhtSkipsHumidityWhenNan) {
@@ -332,10 +436,13 @@ TEST_F(MainInoTest, ReadDhtSkipsHumidityWhenNan) {
   g_dht_temp = 23.5f;
   g_dht_hum  = NAN;   // invalid reading
 
-  read_dht_sensor_value();
+  read_and_send_dht_value();
 
   ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 1u);
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].type, "temperature");
+  ASSERT_EQ(FeatureValueCapture::instance().set_calls.size(), 1u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "temperature");
+  EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[0].value, 23.5f);
 }
 
 TEST_F(MainInoTest, ReadDhtSkipsPublishWhenFeatureNotFound) {
@@ -343,13 +450,16 @@ TEST_F(MainInoTest, ReadDhtSkipsPublishWhenFeatureNotFound) {
   g_dht_temp = 23.5f;
   g_dht_hum  = 60.0f;
 
-  read_dht_sensor_value();
+  read_and_send_dht_value();
 
   EXPECT_EQ(MqttNotifyCapture::instance().calls.size(), 0u);
+  ASSERT_EQ(FeatureValueCapture::instance().set_calls.size(), 2u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "temperature");
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[1].name, "humidity");
 }
 
 // =============================================================================
-// read_light_sensor_value
+// read_and_send_light_value
 // =============================================================================
 
 TEST_F(MainInoTest, ReadLightPublishesValueWhenFeatureFound) {
@@ -357,19 +467,25 @@ TEST_F(MainInoTest, ReadLightPublishesValueWhenFeatureFound) {
   addFeature("light", "light-uuid-0000-0000-000000000003");
   g_light_lux = 1500;
 
-  read_light_sensor_value();
+  read_and_send_light_value();
 
   ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 1u);
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].type, "light");
   EXPECT_FLOAT_EQ(MqttNotifyCapture::instance().calls[0].value, 1500.0f);
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].feature_uuid, "light-uuid-0000-0000-000000000003");
+  ASSERT_EQ(FeatureValueCapture::instance().set_calls.size(), 1u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "light");
+  EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[0].value, 1500.0f);
 }
 
 TEST_F(MainInoTest, ReadLightSkipsPublishWhenFeatureNotFound) {
   // No features registered → UUID lookup fails → nothing published.
   g_light_lux = 1500;
 
-  read_light_sensor_value();
+  read_and_send_light_value();
 
   EXPECT_EQ(MqttNotifyCapture::instance().calls.size(), 0u);
+  ASSERT_EQ(FeatureValueCapture::instance().set_calls.size(), 1u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "light");
+  EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[0].value, 1500.0f);
 }

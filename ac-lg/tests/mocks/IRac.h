@@ -1,4 +1,4 @@
 #pragma once
 // Stub for host-side (native) unit test compilation.
-// IRac class — not used directly in ir_lg.cpp.
+// IRac class is not used directly by the controller tests.
 #include <cstdint>

@@ -6,11 +6,15 @@
 #include "Adafruit_GFX.h"
 #include "Adafruit_SSD1306.h"
 
+#include <ArduinoJson.h>
+
 #include "display.h"
+#include "feature_values.h"
 
 // display.cpp's file-scope flag — reset to true before every test so that
 // a previous init failure does not bleed into the next test.
 extern bool showDisplay;
+extern size_t display_feature_index;
 
 // ---------------------------------------------------------------------------
 // Fixture
@@ -21,6 +25,23 @@ protected:
   void SetUp() override {
     DisplayMockState::reset();
     showDisplay = true;  // restore default so each test starts fresh
+    display_feature_index = 0;
+    feature_values_clear();
+  }
+
+  void initFeatureValues() {
+    JsonDocument doc;
+    JsonArray features = doc.to<JsonArray>();
+
+    JsonObject setpoint = features.add<JsonObject>();
+    setpoint["name"] = "setpoint";
+    setpoint["unit"] = "°C";
+
+    JsonObject temperature = features.add<JsonObject>();
+    temperature["name"] = "temperature";
+    temperature["unit"] = "°C";
+
+    feature_values_init(features);
   }
 };
 
@@ -38,7 +59,7 @@ TEST_F(DisplayTest, InitDisplayClearsAndPrintsStarting) {
   // clearDisplay + print("Starting") + display() must all have been called.
   EXPECT_GE(DisplayMockState::instance().clear_count,   1);
   EXPECT_GE(DisplayMockState::instance().display_count, 1);
-  EXPECT_STREQ(DisplayMockState::instance().last_print_str, "Starting");
+  EXPECT_EQ(DisplayMockState::instance().last_print_str, "Starting");
 }
 
 TEST_F(DisplayTest, InitDisplayLeavesShowDisplayTrueOnSuccess) {
@@ -57,32 +78,69 @@ TEST_F(DisplayTest, InitDisplaySetsShowDisplayFalseOnBeginFailure) {
 // update_display
 // ===========================================================================
 
-TEST_F(DisplayTest, UpdateDisplayRendersValue) {
-  // Ensure the display is considered initialised.
-  init_display();
-  DisplayMockState::reset();  // zero counters after init
+TEST_F(DisplayTest, UpdateDisplayDoesNothingWhenNoFeatureValuesExist) {
+  update_display();
 
-  update_display(22.5f);
-
-  EXPECT_EQ(DisplayMockState::instance().clear_count,   1);
-  EXPECT_EQ(DisplayMockState::instance().display_count, 1);
-  EXPECT_FLOAT_EQ(DisplayMockState::instance().last_print_float, 22.5f);
+  EXPECT_EQ(DisplayMockState::instance().display_count, 0);
+  EXPECT_EQ(DisplayMockState::instance().clear_count, 0);
 }
 
-TEST_F(DisplayTest, UpdateDisplayRendersNegativeValue) {
+TEST_F(DisplayTest, UpdateDisplayDoesNothingWhenNoFeatureHasValueYet) {
+  initFeatureValues();
+
+  update_display();
+
+  EXPECT_EQ(DisplayMockState::instance().display_count, 0);
+  EXPECT_EQ(DisplayMockState::instance().clear_count, 0);
+}
+
+TEST_F(DisplayTest, UpdateDisplayRendersFirstAvailableFeatureValue) {
+  initFeatureValues();
+  ASSERT_TRUE(feature_values_set("temperature", 22.5f));
   init_display();
   DisplayMockState::reset();
 
-  update_display(-3.0f);
+  update_display();
+
+  EXPECT_EQ(DisplayMockState::instance().clear_count, 1);
+  EXPECT_EQ(DisplayMockState::instance().display_count, 1);
+  EXPECT_EQ(DisplayMockState::instance().last_print_str, std::string("22.5 \xF8""C"));
+}
+
+TEST_F(DisplayTest, UpdateDisplayAdvancesThroughAvailableFeatureValues) {
+  initFeatureValues();
+  ASSERT_TRUE(feature_values_set("setpoint", 21.5f));
+  ASSERT_TRUE(feature_values_set("temperature", 22.5f));
+  init_display();
+  DisplayMockState::reset();
+
+  update_display();
+  EXPECT_EQ(DisplayMockState::instance().last_print_str, std::string("21.5 \xF8""C"));
+
+  update_display();
+  EXPECT_EQ(DisplayMockState::instance().last_print_str, std::string("22.5 \xF8""C"));
+
+  EXPECT_EQ(DisplayMockState::instance().display_count, 2);
+}
+
+TEST_F(DisplayTest, UpdateDisplaySkipsFeaturesWithoutValues) {
+  initFeatureValues();
+  ASSERT_TRUE(feature_values_set("temperature", 22.5f));
+  init_display();
+  DisplayMockState::reset();
+
+  update_display();
 
   EXPECT_EQ(DisplayMockState::instance().display_count, 1);
-  EXPECT_FLOAT_EQ(DisplayMockState::instance().last_print_float, -3.0f);
+  EXPECT_EQ(DisplayMockState::instance().last_print_str, std::string("22.5 \xF8""C"));
 }
 
 TEST_F(DisplayTest, UpdateDisplayDoesNothingWhenShowDisplayIsFalse) {
   showDisplay = false;
+  initFeatureValues();
+  ASSERT_TRUE(feature_values_set("temperature", 25.0f));
 
-  update_display(25.0f);
+  update_display();
 
   EXPECT_EQ(DisplayMockState::instance().display_count, 0);
   EXPECT_EQ(DisplayMockState::instance().clear_count,   0);
@@ -92,8 +150,10 @@ TEST_F(DisplayTest, UpdateDisplayAfterInitFailureDoesNothing) {
   DisplayMockState::instance().begin_result = false;
   init_display();  // sets showDisplay = false
   DisplayMockState::reset();
+  initFeatureValues();
+  ASSERT_TRUE(feature_values_set("temperature", 25.0f));
 
-  update_display(25.0f);
+  update_display();
 
   EXPECT_EQ(DisplayMockState::instance().display_count, 0);
 }

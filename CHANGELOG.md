@@ -4,12 +4,29 @@
 
 ### Features
 
-- add device feature spec support
+- Added device feature specs to registration payloads so UI clients can render booleans, numeric ranges, and list options from firmware metadata.
+- Added optional SSD1306 OLED display support, controlled by `OLED_DISPLAY`.
+- Added in-memory feature value tracking for display rendering.
+- Added `online` feature registration and periodic online heartbeat publishing.
+
+### Bug fixes
+
+- Replaced duplicated `mode` and `fanSpeed` numeric literals with `IRremoteESP8266` protocol constants in `ac-beko` and `ac-lg` registration specs and command dispatch.
+- Updated command dispatch to call `IRremoteESP8266` setters with the protocol constants directly.
+
+### Tests
+
+- Added host tests for `feature_values` and OLED display modules.
+- Expanded main `.ino` tests for feature specs, online status publishing, feature value recording, and command value display updates.
+
+### Chores
+
+- Added `OLED_DISPLAY` to `secrets-template`.
 
 
 ## 4.0.0
 
-Changes apply across all 7 firmware directories (`dht-light`, `barometer`, `airquality-pir`, `power-outage`, `ac-beko`, `ac-lg`, `thermostat`) unless a narrower scope is listed.
+Changes apply across all 7 firmware directories (`dht-light`, `barometer`, `airquality-pir`, `ac-beko`, `ac-lg`, `thermostat`) unless a narrower scope is listed.
 
 ### Features
 

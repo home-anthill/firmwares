@@ -9,3 +9,7 @@ size_t storage_set_uuid(const char* uuid);
 void storage_get_features(JsonArray features);
 
 size_t storage_set_features(JsonArray features);
+
+void storage_get_feature_values(JsonArray featureValues);
+
+size_t storage_set_feature_values(JsonArray featureValues);

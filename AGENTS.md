@@ -4,7 +4,7 @@ This file provides guidance to AI agents when working with code in this reposito
 
 ## Project Overview
 
-This is a monorepo of Arduino/ESP32 firmwares for the **home-anthill** IoT platform. Each subdirectory is an independent firmware for a specific sensor/controller device: `dht-light`, `airquality-pir`, `barometer`, `power-outage`, `ac-beko`, `ac-lg`, `thermostat`.
+This is a monorepo of Arduino/ESP32 firmwares for the **home-anthill** IoT platform. Each subdirectory is an independent firmware for a specific sensor/controller device: `dht-light`, `airquality-pir`, `barometer`, `ac-beko`, `ac-lg`, `thermostat`.
 
 All firmwares target **ESP32** boards (esp32, esp32s2, esp32s3) and share a common architecture pattern.
 
@@ -23,10 +23,10 @@ arduino-cli core update-index
 arduino-cli core install esp32:esp32@3.3.7
 
 # Install all required libraries (run once)
-arduino-cli lib install "ArduinoJson"@7.4.2 "PubSubClient"@2.8.0 "TimeAlarms"@1.5.0 "Time"@1.6.1 \
+arduino-cli lib install "ArduinoJson"@7.4.3 "PubSubClient"@2.8.0 "TimeAlarms"@1.5.0 "Time"@1.6.1 \
   "Adafruit Unified Sensor"@1.1.15 "DHT sensor library"@1.4.6 "Grove - Digital Light Sensor"@2.0.0 \
   "HttpClient"@2.2.0 "XENSIV Digital Pressure Sensor"@1.0.2 "Grove - Air quality sensor"@1.0.2 \
-  "IRremoteESP8266"@2.9.0 "Adafruit GFX Library"@1.12.5 "Adafruit SSD1306"@2.5.16 \
+  "IRremoteESP8266"@2.9.0 "Adafruit GFX Library"@1.12.6 "Adafruit SSD1306"@2.5.16 \
   "Adafruit BusIO"@1.17.4 "Adafruit MCP9600 Library"@2.0.4
 
 # Prepare secrets
@@ -62,7 +62,7 @@ screen /dev/ttyUSB0 115200   # Ctrl+A, Ctrl+\ to exit
 
 Firmwares are built using **Arduino CLI** (not PlatformIO). There is no Makefile — compilation is done directly via `arduino-cli compile`. See **Quick Start** above for board setup, library install commands, and the compile command pattern.
 
-For a repo-wide local check, use `./build-all.sh`. It prepares missing `secrets.h` files from `secrets-template`, builds all 7 firmwares for `esp32s2` and `esp32s3`, and runs every host unit test. Use `--build-only`, `--test-only`, and `--clean-tests` to narrow the run.
+For a repo-wide local check, use `./build-all.sh`. It prepares missing `secrets.h` files from `secrets-template`, builds all active firmwares for `esp32s2` and `esp32s3`, and runs every host unit test. Use `--build-only`, `--test-only`, and `--clean-tests` to narrow the run.
 
 Each firmware directory must contain a `secrets.h` file (gitignored). Copy `secrets-template` to `<firmware>/secrets.h` and fill in real values for development, or use it as-is for CI builds.
 
@@ -104,7 +104,7 @@ cd build && ctest --output-on-failure
 ./build-all.sh --test-only
 ```
 
-Each firmware provides separate test executables per module (`test_storage`, `test_registration`, `test_mqtt_handler`, `test_main_ino`, plus device-specific ones such as `test_dht_sensor`, `test_ir_beko`, `test_controller`, etc.). All are registered with CTest.
+Each firmware provides separate test executables per module (`test_storage`, `test_registration`, `test_mqtt_handler`, `test_main_ino`, plus device-specific ones such as `test_dht_sensor`, `test_ir_beko_controller`, `test_controller`, etc.). All are registered with CTest.
 
 **Hardware / integration testing** (still required for sensor accuracy and IR codes):
 - Deploy to ESP32, connect to local MQTT broker, verify messages appear.
@@ -135,16 +135,17 @@ Each firmware provides separate test executables per module (`test_storage`, `te
 
 ### Three firmware categories
 
-**Sensor firmwares** (`dht-light`, `barometer`, `airquality-pir`, `power-outage`):
+**Sensor firmwares** (`dht-light`, `barometer`, `airquality-pir`):
 - Use `TimeAlarms` to periodically read sensors and publish to MQTT
 - Alarms are created disabled in `setup()`, enabled only when MQTT connects
 - `mqtt_callback()` is empty — sensors are read-only
 - `loop()` disables alarms on WiFi loss, re-enables on MQTT reconnect
 
 **Controller firmwares** (`ac-beko`, `ac-lg`):
-- No `TimeAlarms`; purely event-driven via MQTT messages
+- Use `TimeAlarms` for online heartbeat and optional OLED display rotation; control changes are still event-driven via MQTT messages
 - `mqtt_callback()` receives JSON commands and invokes IR remote sending (`ir_send_command`)
 - Each uses `IRremoteESP8266` with device-specific IR protocols (COOLIX for Beko, LG protocol for LG)
+- For IR-backed list features such as `mode` and `fanSpeed`, use the protocol constants from `IRremoteESP8266` headers in both `buildFeatures()` registration specs and command dispatch (`kCoolix...`, `kLgAc...`, etc.) instead of duplicating fixed numeric values. The published JSON values must remain the protocol values expected by the IR library.
 - Signed command replay protection: after HMAC, device identity, model, and feature validation pass, controllers claim the signed nonce in a 32-entry in-memory nonce cache and reject duplicates within `COMMAND_MAX_SKEW_SECS` before executing IR changes.
 
 **Thermostat** — hybrid sensor + controller:
@@ -175,6 +176,8 @@ Each firmware provides separate test executables per module (`test_storage`, `te
 - **`registration.cpp/h`** — HTTP POST to `/admission/register`. Handles first-boot (HTTP 200) and already-registered (HTTP 409). Stores device UUID and features in Preferences on success.
 - **`mqtt_handler.cpp/h`** — MQTT connection and publishing via `PubSubClient`. Publishes to `sensors/<device_uuid>/<type>`, subscribes to `devices/<uuid>/values`. Socket timeout is set to 15 s (`setSocketTimeout`) to bound TLS hangs. On publish failure, `mqtt_client.disconnect()` is called explicitly so that `mqtt_client.connected()` returns `false` on the next `loop()` iteration and the reconnect path is entered (a stale TCP socket would otherwise keep `connected()` returning `true` indefinitely).
 - **`storage.cpp/h`** — Persistent key-value storage using ESP32 `Preferences` library. Stores device UUID (`"uuid"` key) and features array (`"features"` key) under namespace `"device"`.
+- **`feature_values.cpp/h`** — In-memory cache of current feature values keyed by registered feature name. Used by OLED display code and command/sensor updates.
+- **`display.cpp/h`** — Optional SSD1306 128x32 OLED output behind the `OLED_DISPLAY` define. Tests can force it on with `HOME_ANTHILL_TEST_OLED_DISPLAY`.
 
 ### Key flow
 
@@ -217,7 +220,7 @@ The `SSL` define in `secrets.h` controls whether connections use TLS. It's check
 
 ## CI
 
-GitHub Actions workflow (`.github/workflows/run-build.yml`) builds all 7 firmwares across the ESP32 matrix (esp32, esp32s2, esp32s3) using `secrets-template` as a stand-in for `secrets.h`, and runs all host CTest suites.
+GitHub Actions workflow (`.github/workflows/run-build.yml`) builds all active firmwares across the ESP32 matrix (esp32, esp32s2, esp32s3) using `secrets-template` as a stand-in for `secrets.h`, and runs all host CTest suites.
 
 ## Code Style
 
@@ -226,7 +229,7 @@ GitHub Actions workflow (`.github/workflows/run-build.yml`) builds all 7 firmwar
 - Function names use `snake_case` with module prefix (e.g., `mqtt_connect`, `dht_get_temperature`)
 - Global variables are used for shared state (e.g., `saved_device_uuid`, `mqtt_client`, `wifi_client`)
 - **ArduinoJson v7**: use `JsonDocument` — `StaticJsonDocument` and `DynamicJsonDocument` are deprecated aliases in v7 and must not be introduced
-- **`Alarm.delay()` vs `delay()`**: sensor firmwares (and thermostat) must use `Alarm.delay(100)` in `loop()` instead of bare `delay()` so that TimeAlarms can fire; controller firmwares (`ac-beko`, `ac-lg`) use bare `delay(100)` since they have no alarms. The 100 ms value gives fast MQTT polling (10× per second) without affecting alarm fire times (which are based on elapsed time, not iteration count).
+- **`Alarm.delay()` vs `delay()`**: all active firmwares use `TimeAlarms` and must use `Alarm.delay(100)` in `loop()` instead of bare `delay()` so alarms can fire. The 100 ms value gives fast MQTT polling (10× per second) without affecting alarm fire times (which are based on elapsed time, not iteration count).
 - **`mqtt_client.loop()` return check**: all firmwares check the return value of `mqtt_client.loop()` and call `mqtt_client.disconnect()` on `false`. For controller firmwares (`ac-beko`, `ac-lg`) this is the *only* stale-connection detection path (they never publish). For sensor firmwares it is secondary defense: publish failure already triggers `disconnect()` at the next alarm tick (30–60 s), but the `loop()` return catches stale connections via PINGREQ timeout (~15 s) without waiting for the next publish.
 
 ## Device-Specific Notes
@@ -236,8 +239,6 @@ GitHub Actions workflow (`.github/workflows/run-build.yml`) builds all 7 firmwar
 **barometer**: Reads atmospheric pressure via XENSIV sensor over I2C. Verify I2C address matches your sensor variant.
 
 **airquality-pir**: Dual-sensor device: air quality (TVOC/eCO2) and PIR motion. PIR is read on interrupt, air quality on timer. Ensure PIR pin matches wiring.
-
-**power-outage**: Monitors mains power status (GPIO-based detection). Publishes online heartbeat even when powered down. Critical for home automation resilience.
 
 **ac-beko** / **ac-lg**: IR remote controllers. Each uses device-specific IR protocol. When modifying IR codes, test against real AC unit. IR LED power and frequency are hardware-dependent.
 

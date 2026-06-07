@@ -20,13 +20,20 @@
 #include "registration.h"
 #include "storage.h"
 #include "barometer_sensor.h"
+#include "display.h"
+#include "feature_values.h"
+
+// build-in RGB LED
+#define BOARD_RGB_LED_PIN 38
 
 char mac_address[18];
 
 // private functions
 void mqtt_callback(char* topic, uint8_t* payload, unsigned int length);
 bool get_feature_uuid_by_name(char* featureUuid, size_t max_len, const char* name);
-void read_barometer_sensor_value();
+void read_and_send_barometer_value();
+void send_online_status();
+void publish_initial_values();
 void alarms_init();
 void alarms_enable();
 void alarms_disable();
@@ -35,6 +42,10 @@ JsonDocument buildFeatures();
 
 // alarms used to periodically read values from sensors
 AlarmID_t alarm_barometer;
+AlarmID_t alarm_online;
+#if OLED_DISPLAY == true
+AlarmID_t alarm_display;
+#endif
 
 // device_uuid global variable
 char saved_device_uuid[37];
@@ -60,43 +71,77 @@ bool get_feature_uuid_by_name(char* featureUuid, size_t max_len, const char* nam
   return false;
 }
 
-void read_barometer_sensor_value() {
-  Serial.println("read_barometer_sensor_value - called");
+void read_and_send_barometer_value() {
+  Serial.println("read_and_send_barometer_value - called");
   float temperature = barometer_get_temperature();
   if (!isnan(temperature)) {
-    Serial.printf("read_barometer_sensor_value - temperature: %.2f °C\n", temperature);
+    Serial.printf("read_and_send_barometer_value - temperature: %.2f °C\n", temperature);
     const char* feature_name = "temperature";
+    feature_values_set(feature_name, temperature);
     char temp_feature_uuid[37];
     if (get_feature_uuid_by_name(temp_feature_uuid, sizeof(temp_feature_uuid), feature_name)) {
       mqtt_notify_value(saved_device_uuid, temp_feature_uuid, feature_name, temperature);
     } else {
-      Serial.println("read_barometer_sensor_value - feature uuid not found for temperature");
+      Serial.println("read_and_send_barometer_value - feature uuid not found for temperature");
     }
   }
   float airpressure = barometer_get_airpressure();
   if (!isnan(airpressure)) {
-    Serial.printf("read_barometer_sensor_value - airpressure: %.2f hPa\n", airpressure);
+    Serial.printf("read_and_send_barometer_value - airpressure: %.2f hPa\n", airpressure);
     const char* feature_name = "airpressure";
+    feature_values_set(feature_name, airpressure);
     char airpressure_feature_uuid[37];
     if (get_feature_uuid_by_name(airpressure_feature_uuid, sizeof(airpressure_feature_uuid), feature_name)) {
       mqtt_notify_value(saved_device_uuid, airpressure_feature_uuid, feature_name, airpressure);
     } else {
-      Serial.println("read_barometer_sensor_value - feature uuid not found for airpressure");
+      Serial.println("read_and_send_barometer_value - feature uuid not found for airpressure");
     }
   }
 }
 
+void send_online_status() {
+  Serial.println("send_online_status - called");
+  const char* feature_name = "online";
+  feature_values_set(feature_name, 1);
+  char feature_uuid[37];
+  if (get_feature_uuid_by_name(feature_uuid, sizeof(feature_uuid), feature_name)) {
+    mqtt_notify_value(saved_device_uuid, feature_uuid, feature_name, 1);
+  } else {
+    Serial.println("send_online_status - feature uuid not found for online");
+  }
+}
+
+void publish_initial_values() {
+  Serial.println("publish_initial_values - called");
+  read_and_send_barometer_value();
+  send_online_status();
+}
+
 void alarms_init() {
-  alarm_barometer = Alarm.timerRepeat(30, read_barometer_sensor_value);
+  alarm_barometer = Alarm.timerRepeat(30, read_and_send_barometer_value);
   Alarm.disable(alarm_barometer);
+  alarm_online = Alarm.timerRepeat(60, send_online_status);
+  Alarm.disable(alarm_online);
+#if OLED_DISPLAY == true
+  alarm_display = Alarm.timerRepeat(5, update_display);
+  Alarm.disable(alarm_display);
+#endif
 }
 
 void alarms_enable() {
   Alarm.enable(alarm_barometer);
+  Alarm.enable(alarm_online);
+#if OLED_DISPLAY == true
+  Alarm.enable(alarm_display);
+#endif
 }
 
 void alarms_disable() {
   Alarm.disable(alarm_barometer);
+  Alarm.disable(alarm_online);
+#if OLED_DISPLAY == true
+  Alarm.disable(alarm_display);
+#endif
 }
 
 void init_sensors() {
@@ -136,6 +181,15 @@ JsonDocument buildFeatures() {
   temperatureSpec["max"] = 85;
   temperatureSpec["step"] = 0.5;
 
+  JsonObject online = array.add<JsonObject>();
+  online["type"] = "sensor";
+  online["name"] = "online";
+  online["enable"] = true;
+  online["order"] = 4;
+  online["unit"] = "-";
+  JsonObject onlineSpec = online["spec"].to<JsonObject>();
+  onlineSpec["format"] = "bool";
+
   return root;
 }
 
@@ -144,17 +198,12 @@ void setup() {
   delay(1000);
 
   Serial.println("setup - starting...");
-  
+  init_display();
+
   // 0. configure hardware
-  //    disable ESP builtin LED
-  //    but not all ESP boards have this variable defined, so I should check the existance of `LED_BUILTIN`.
-  #ifdef LED_BUILTIN
-    // disable ESP32 Devkit-C built-in LED
-    pinMode(LED_BUILTIN, OUTPUT);
-    digitalWrite(LED_BUILTIN, LOW);
-  #endif
-  // set time to Saturday 00:00:00am Jan 1 2021
-  setTime(0,0,0,1,1,25);
+  rgbLedWrite(BOARD_RGB_LED_PIN, 0, 0, 0); 
+  // set time to Saturday 00:00:00am Jan 1 2025
+  setTime(0, 0, 0, 1, 1, 25);
 
   // 1. prepare wifi_client
   //    If SSL is enabled, add root ca to wifi_client to be used for secure connections
@@ -222,6 +271,7 @@ void setup() {
     Serial.println("**********************************");
     return;
   }
+  feature_values_init(saved_features);
 
   // 8. init sensors
   init_sensors();
@@ -248,7 +298,8 @@ void loop() {
   if (!mqtt_client.connected()) {
     Serial.println("loop - mqtt connecting...");
     mqtt_connect(saved_device_uuid);
-    // starts alarms to read sensors values
+    publish_initial_values();
+    // starts alarms
     alarms_enable();
   }
 

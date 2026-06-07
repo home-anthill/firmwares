@@ -1,12 +1,3 @@
-// NOTE: This file intentionally diverges from the shared storage.cpp used by all other
-// firmwares (ac-beko, ac-lg, airquality-pir, barometer, dht-light, power-outage).
-// The base functions (storage_get_uuid, storage_set_uuid, storage_get_features,
-// storage_set_features) are identical to those in the other firmwares.
-// The two extra functions below — storage_get_feature_values / storage_set_feature_values —
-// are thermostat-specific: they persist user-configurable controller state (setpoint,
-// tolerance) under the "featureValues" Preferences key, which no other firmware needs.
-// Do NOT blindly overwrite this file when syncing shared modules.
-
 // include Arduino library to use Arduino function in cpp files
 #include <Arduino.h>
 // include json library (https://github.com/bblanchon/ArduinoJson)

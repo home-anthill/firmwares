@@ -16,28 +16,53 @@
 
 // include all local files
 #include "controller.h"
-#include "display.h"
 #include "mqtt_handler.h"
 #include "registration.h"
 #include "storage.h"
 #include "temp_sensor.h"
 #include "wifi_handler.h"
+#include "display.h"
+#include "feature_values.h"
+
+// build-in RGB LED
+#define BOARD_RGB_LED_PIN 38
 
 char mac_address[18];
 
-// alarms used to periodically read values from sensors
-AlarmID_t alarm_temp;
-
 // private functions
 void mqtt_callback(char *topic, uint8_t *payload, unsigned int length);
-bool get_feature_uuid_by_name(char *featureUuid, size_t max_len,
-                              const char *name);
-JsonDocument buildFeatures();
+bool get_feature_uuid_by_name(char *featureUuid, size_t max_len, const char *name);
+void feature_values_load_saved();
+void feature_values_init_saved_features();
+void record_command_values(uint8_t* payload, unsigned int length);
+void display_show_feature(const char* name);
+void command_display_start();
+void command_display_next();
 void read_temp_sensor_value();
+void send_online_status();
 void alarms_init();
-void alarms_enable();
+void alarm_temperature_enable();
+void alarm_online_enable();
+void alarm_online_disable();
+void alarm_command_display_enable();
+void alarm_command_display_disable();
 void alarms_disable();
 void init_sensors();
+JsonDocument buildFeatures();
+
+// alarms used to periodically read values from sensors
+AlarmID_t alarm_temp;
+AlarmID_t alarm_online;
+#if OLED_DISPLAY == true
+AlarmID_t alarm_command_display;
+extern size_t display_feature_index;
+#endif
+
+const size_t COMMAND_DISPLAY_QUEUE_MAX = 8;
+char command_display_queue[COMMAND_DISPLAY_QUEUE_MAX][FEATURE_VALUE_NAME_MAX_LEN];
+size_t command_display_len = 0;
+size_t command_display_index = 0;
+bool command_display_active = false;
 
 // device_uuid global variable
 char saved_device_uuid[37];
@@ -106,8 +131,7 @@ const unsigned long CONN_REG_RETRY_MS = 10000;
 // stack
 const unsigned long CONN_COOLDOWN_MS = 43200000UL;
 
-bool get_feature_uuid_by_name(char *featureUuid, size_t max_len,
-                              const char *name) {
+bool get_feature_uuid_by_name(char *featureUuid, size_t max_len, const char *name) {
   for (int i = 0; i < saved_features.size(); i++) {
     JsonObject feature = saved_features[i];
     const char *uuidval = feature["uuid"];
@@ -129,6 +153,141 @@ void mqtt_callback(char *topic, uint8_t *payload, unsigned int length) {
   Serial.println("mqtt_callback - called");
   set_configuration(saved_device_uuid, mac_address, saved_features, payload,
                     length);
+  record_command_values(payload, length);
+}
+
+void feature_values_load_saved() {
+  JsonDocument doc;
+  JsonArray featureValues = doc.to<JsonArray>();
+  storage_get_feature_values(featureValues);
+
+  for (JsonObject featureValue : featureValues) {
+    const char* feature_name = featureValue["featureName"];
+    if (feature_name == nullptr) {
+      feature_name = featureValue["name"];
+    }
+    JsonVariant value = featureValue["payload"]["value"];
+    if (value.isNull()) {
+      value = featureValue["value"];
+    }
+    if (feature_name == nullptr || value.isNull() ||
+        !(value.is<bool>() || value.is<int>() || value.is<float>())) {
+      continue;
+    }
+    feature_values_set(feature_name, value.as<float>());
+  }
+}
+
+void feature_values_init_saved_features() {
+  if (saved_features.size() > 0) {
+    feature_values_init(saved_features);
+  } else {
+    JsonDocument default_features = buildFeatures();
+    feature_values_init(default_features.as<JsonArray>());
+  }
+
+  feature_values_load_saved();
+}
+
+void display_show_feature(const char* name) {
+#if OLED_DISPLAY == true
+  if (name == nullptr) {
+    return;
+  }
+
+  FeatureValue value = {};
+  for (size_t i = 0; i < feature_values_count(); i++) {
+    if (!feature_values_get(i, &value)) {
+      continue;
+    }
+    if (strcmp(value.name, name) == 0 && value.has_value) {
+      display_feature_index = i;
+      update_display();
+      return;
+    }
+  }
+#else
+  (void)name;
+#endif
+}
+
+void record_command_values(uint8_t* payload, unsigned int length) {
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, payload, length);
+  if (error) {
+    Serial.print("record_command_values - deserializeJson failed: ");
+    Serial.println(error.c_str());
+    return;
+  }
+
+  JsonArray command_values = doc.as<JsonArray>();
+  if (command_values.isNull()) {
+    return;
+  }
+
+  command_display_len = 0;
+  command_display_index = 0;
+  command_display_active = false;
+  alarm_command_display_disable();
+
+  for (JsonObject command_value : command_values) {
+    const char* feature_name = command_value["featureName"];
+    if (feature_name == nullptr) {
+      continue;
+    }
+
+    JsonVariant value = command_value["payload"]["value"];
+    if (value.isNull()) {
+      value = command_value["value"];
+    }
+    if (value.isNull() || !(value.is<bool>() || value.is<int>() || value.is<float>())) {
+      continue;
+    }
+
+    if (feature_values_set(feature_name, value.as<float>())) {
+      if (command_display_len < COMMAND_DISPLAY_QUEUE_MAX) {
+        strncpy(command_display_queue[command_display_len], feature_name,
+                FEATURE_VALUE_NAME_MAX_LEN - 1);
+        command_display_queue[command_display_len][FEATURE_VALUE_NAME_MAX_LEN - 1] = '\0';
+        command_display_len++;
+      }
+    }
+  }
+
+  command_display_start();
+}
+
+void command_display_start() {
+#if OLED_DISPLAY == true
+  if (command_display_len == 0) {
+    return;
+  }
+
+  command_display_active = true;
+  command_display_index = 0;
+  display_show_feature(command_display_queue[command_display_index]);
+  command_display_index++;
+  alarm_command_display_enable();
+#endif
+}
+
+void command_display_next() {
+#if OLED_DISPLAY == true
+  if (!command_display_active) {
+    alarm_command_display_disable();
+    return;
+  }
+
+  if (command_display_index < command_display_len) {
+    display_show_feature(command_display_queue[command_display_index]);
+    command_display_index++;
+    return;
+  }
+
+  alarm_command_display_disable();
+  command_display_active = false;
+  display_show_feature("temperature");
+#endif
 }
 
 JsonDocument buildFeatures() {
@@ -171,6 +330,15 @@ JsonDocument buildFeatures() {
   temperatureSpec["max"] = 200; // TODO is this right???
   temperatureSpec["step"] = 0.01; // TODO is this right???
 
+  JsonObject online = array.add<JsonObject>();
+  online["type"] = "sensor";
+  online["name"] = "online";
+  online["enable"] = true;
+  online["order"] = 4;
+  online["unit"] = "-";
+  JsonObject onlineSpec = online["spec"].to<JsonObject>();
+  onlineSpec["format"] = "bool";
+
   return root;
 }
 
@@ -181,7 +349,9 @@ void read_temp_sensor_value() {
     Serial.println("read_temp_sensor_value - error reading temperature!");
   } else {
     Serial.printf("read_temp_sensor_value - temperature: %.2f °C\n", temp);
-    update_display(temp);
+    if (feature_values_set("temperature", temp) && !command_display_active) {
+      display_show_feature("temperature");
+    }
 
     if (mqtt_client.connected()) {
       const char *feature_name = "temperature";
@@ -229,16 +399,74 @@ void read_temp_sensor_value() {
   }
 }
 
+void send_online_status() {
+  Serial.println("send_online_status - called");
+  if (!mqtt_client.connected()) {
+    Serial.println("send_online_status - MQTT not connected, skipping");
+    return;
+  }
+
+  const char* feature_name = "online";
+  char feature_uuid[37];
+  if (get_feature_uuid_by_name(feature_uuid, sizeof(feature_uuid), feature_name)) {
+    mqtt_notify_value(saved_device_uuid, feature_uuid, feature_name, 1);
+  } else {
+    Serial.println("send_online_status - feature uuid not found for online");
+  }
+}
+
+void publish_initial_values() {
+  Serial.println("publish_initial_values - called");
+  read_temp_sensor_value();
+  send_online_status();
+}
+
 void alarms_init() {
   alarm_temp = Alarm.timerRepeat(10, read_temp_sensor_value);
   Alarm.disable(alarm_temp);
+  alarm_online = Alarm.timerRepeat(60, send_online_status);
+  Alarm.disable(alarm_online);
+#if OLED_DISPLAY == true
+  alarm_command_display = Alarm.timerRepeat(1, command_display_next);
+  Alarm.disable(alarm_command_display);
+#endif
 }
 
-void alarms_enable() { Alarm.enable(alarm_temp); }
+void alarm_temperature_enable() {
+  Alarm.enable(alarm_temp);
+}
 
-void alarms_disable() { Alarm.disable(alarm_temp); }
+void alarm_online_enable() {
+  Alarm.enable(alarm_online);
+}
 
-void init_sensors() { temp_init_sensor(); }
+void alarm_online_disable() {
+  Alarm.disable(alarm_online);
+}
+
+void alarm_command_display_enable() {
+#if OLED_DISPLAY == true
+  Alarm.enable(alarm_command_display);
+#endif
+}
+
+void alarm_command_display_disable() {
+#if OLED_DISPLAY == true
+  Alarm.disable(alarm_command_display);
+#endif
+}
+
+void alarms_disable() {
+  Alarm.disable(alarm_temp);
+  Alarm.disable(alarm_online);
+#if OLED_DISPLAY == true
+  Alarm.disable(alarm_command_display);
+#endif
+}
+
+void init_sensors() {
+  temp_init_sensor();
+}
 
 void setup() {
   Serial.begin(115200);
@@ -246,11 +474,8 @@ void setup() {
 
   Serial.println("setup - starting...");
 
-// 0. configure hardware
-#ifdef LED_BUILTIN
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, LOW);
-#endif
+  // 0. configure hardware
+  rgbLedWrite(BOARD_RGB_LED_PIN, 0, 0, 0); 
   // set time to Saturday 00:00:00am Jan 1 2025
   setTime(0, 0, 0, 1, 1, 25);
 
@@ -262,6 +487,12 @@ void setup() {
   Serial.println("setup - init display");
   init_display();
 
+  // Load any persisted feature definitions so offline temperature reads can
+  // still use the same display path as received commands.
+  Serial.println("setup - loading saved features for display");
+  storage_get_features(saved_features);
+  feature_values_init_saved_features();
+
   // 3. instantiate alarms (disabled)
   Serial.println("setup - init alarms (still disabled)...");
   alarms_init();
@@ -272,11 +503,11 @@ void setup() {
   pinMode(FAN, OUTPUT);
   pinMode(PUMP, OUTPUT);
 
-  // 5. enable alarms — thermostat is now FULLY OPERATIONAL offline
-  //    Temperature reading + hysteretic control will fire every 10 s via
+  // 5. enable alarms — thermostat is OPERATIONAL offline
+  //    Temperature reading + hysteretic control will fire every 10s via
   //    Alarm.delay() in loop(), regardless of WiFi/MQTT state.
-  Serial.println("setup - enable alarms");
-  alarms_enable();
+  Serial.println("setup - enable temperature alarm");
+  alarm_temperature_enable();
 
 // 6. prepare wifi_client (CA cert for TLS)
 #if SSL == true
@@ -317,6 +548,7 @@ void handle_connectivity() {
       size_t uuid_len = storage_get_uuid(saved_device_uuid);
       if (uuid_len == 37 && strlen(saved_device_uuid) > 0) {
         storage_get_features(saved_features);
+        feature_values_init_saved_features();
       }
 
       if (strlen(saved_device_uuid) == 0 || saved_features.size() == 0) {
@@ -378,6 +610,7 @@ void handle_connectivity() {
                          "connecting to MQTT");
           conn_attempts = 0;
           conn_next_attempt_ms = 0;
+          feature_values_init_saved_features();
           conn_state = CONN_MQTT_TRYING;
         } else {
           Serial.println("handle_connectivity - registration OK but failed to "
@@ -425,6 +658,8 @@ void handle_connectivity() {
       Serial.println("handle_connectivity - MQTT connected, going online");
       conn_attempts = 0;
       conn_next_attempt_ms = 0;
+      alarm_online_enable();
+      publish_initial_values();
       conn_state = CONN_ONLINE;
     } else {
       conn_attempts++;
@@ -434,6 +669,7 @@ void handle_connectivity() {
       if (conn_attempts >= CONN_MAX_MQTT_ATTEMPTS) {
         Serial.println("handle_connectivity - MQTT max attempts reached, "
                        "entering cooldown");
+        alarm_online_disable();
         conn_cooldown_until_ms = now + CONN_COOLDOWN_MS;
         conn_state = CONN_COOLDOWN;
       }
@@ -443,11 +679,13 @@ void handle_connectivity() {
   case CONN_ONLINE:
     if (wifi_get_status() != WL_CONNECTED) {
       Serial.println("handle_connectivity - WiFi dropped, reconnecting...");
+      alarm_online_disable();
       conn_attempts = 0;
       wifi_start_connect();
       conn_state = CONN_WIFI_WAITING;
     } else if (!mqtt_client.connected()) {
       Serial.println("handle_connectivity - MQTT dropped, reconnecting...");
+      alarm_online_disable();
       conn_attempts = 0;
       conn_next_attempt_ms = 0;
       conn_state = CONN_MQTT_TRYING;
@@ -478,6 +716,7 @@ void loop() {
     if (!mqtt_client.loop()) {
       Serial.println("loop - mqtt_client.loop() returned false, forcing disconnect to trigger reconnect");
       mqtt_client.disconnect();
+      alarm_online_disable();
     }
   }
 

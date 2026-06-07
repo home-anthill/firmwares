@@ -18,14 +18,20 @@
 #include "storage.h"
 #include "airquality_sensor.h"
 #include "pir_sensor.h"
+#include "display.h"
+#include "feature_values.h"
+
+// build-in RGB LED
+#define BOARD_RGB_LED_PIN 38
 
 char mac_address[18];
 
 // private functions
 void mqtt_callback(char* topic, uint8_t* payload, unsigned int length);
 bool get_feature_uuid_by_name(char* featureUuid, size_t max_len, const char* name);
-void read_airquality_sensor_value();
-void read_pir_sensor_value();
+void read_and_send_airquality_value();
+void read_and_send_pir_value();
+void send_online_status();
 void alarms_init();
 void alarms_enable();
 void alarms_disable();
@@ -35,6 +41,10 @@ JsonDocument buildFeatures();
 // alarms used to periodically read values from sensors
 AlarmID_t alarm_airquality;
 AlarmID_t alarm_pir;
+AlarmID_t alarm_online;
+#if OLED_DISPLAY == true
+AlarmID_t alarm_display;
+#endif
 
 // device_uuid global variable
 char saved_device_uuid[37];
@@ -60,55 +70,90 @@ bool get_feature_uuid_by_name(char* featureUuid, size_t max_len, const char* nam
   return false;
 }
 
-void read_airquality_sensor_value() {
-  Serial.println("read_airquality_sensor_value - called");
+void read_and_send_airquality_value() {
+  Serial.println("read_and_send_airquality_value - called");
   bool hasNewValue = airquality_has_newvalue();
   int value = airquality_get_value();
-  Serial.printf("read_airquality_sensor_value - hasNewValue=%d\n", hasNewValue);
+  Serial.printf("read_and_send_airquality_value - hasNewValue=%d\n", hasNewValue);
   // notifiy only if the value is changed to prevent useless notifications
   if (hasNewValue) {
     const char* feature_name = "airquality";
+    feature_values_set(feature_name, value);
     char feature_uuid[37];
     if (get_feature_uuid_by_name(feature_uuid, sizeof(feature_uuid), feature_name)) {
       mqtt_notify_value(saved_device_uuid, feature_uuid, feature_name, value);
     } else {
-      Serial.println("read_airquality_sensor_value - feature uuid not found for airquality");
+      Serial.println("read_and_send_airquality_value - feature uuid not found for airquality");
     }
   }
 }
 
-void read_pir_sensor_value() {
-  Serial.println("read_pir_sensor_value - called");
+void read_and_send_pir_value() {
+  Serial.println("read_and_send_pir_value - called");
   int pre_value = pir_get_prev_value();
   int new_value = pir_get_value();
-  Serial.printf("read_pir_sensor_value - new_value read = %d\n", new_value);
+  Serial.printf("read_and_send_pir_value - new_value read = %d\n", new_value);
   // notifiy only if the value is changed to prevent useless notifications
   if (pre_value != new_value) {
     const char* feature_name = "motion";
+    feature_values_set(feature_name, new_value);
     char feature_uuid[37];
     if (get_feature_uuid_by_name(feature_uuid, sizeof(feature_uuid), feature_name)) {
       mqtt_notify_value(saved_device_uuid, feature_uuid, feature_name, new_value);
     } else {
-      Serial.println("read_pir_sensor_value - feature uuid not found for motion");
+      Serial.println("read_and_send_pir_value - feature uuid not found for motion");
     }
   }
 }
 
+void send_online_status() {
+  Serial.println("send_online_status - called");
+  const char* feature_name = "online";
+  feature_values_set(feature_name, 1);
+  char feature_uuid[37];
+  if (get_feature_uuid_by_name(feature_uuid, sizeof(feature_uuid), feature_name)) {
+    mqtt_notify_value(saved_device_uuid, feature_uuid, feature_name, 1);
+  } else {
+    Serial.println("send_online_status - feature uuid not found for online");
+  }
+}
+
+void publish_initial_values() {
+  Serial.println("publish_initial_values - called");
+  read_and_send_airquality_value();
+  read_and_send_pir_value();
+  send_online_status();
+}
+
 void alarms_init() {
-  alarm_airquality = Alarm.timerRepeat(50, read_airquality_sensor_value);
+  alarm_airquality = Alarm.timerRepeat(50, read_and_send_airquality_value);
   Alarm.disable(alarm_airquality);
-  alarm_pir = Alarm.timerRepeat(30, read_pir_sensor_value);
+  alarm_pir = Alarm.timerRepeat(30, read_and_send_pir_value);
   Alarm.disable(alarm_pir);
+  alarm_online = Alarm.timerRepeat(60, send_online_status);
+  Alarm.disable(alarm_online);
+#if OLED_DISPLAY == true
+  alarm_display = Alarm.timerRepeat(5, update_display);
+  Alarm.disable(alarm_display);
+#endif
 }
 
 void alarms_enable() {
   Alarm.enable(alarm_airquality);
   Alarm.enable(alarm_pir);
+  Alarm.enable(alarm_online);
+#if OLED_DISPLAY == true
+  Alarm.enable(alarm_display);
+#endif
 }
 
 void alarms_disable() {
   Alarm.disable(alarm_airquality);
   Alarm.disable(alarm_pir);
+  Alarm.disable(alarm_online);
+#if OLED_DISPLAY == true
+  Alarm.disable(alarm_display);
+#endif
 }
 
 void init_sensors() {
@@ -146,6 +191,15 @@ JsonDocument buildFeatures() {
   JsonObject motionSpec = motion["spec"].to<JsonObject>();
   motionSpec["format"] = "bool";
 
+  JsonObject online = array.add<JsonObject>();
+  online["type"] = "sensor";
+  online["name"] = "online";
+  online["enable"] = true;
+  online["order"] = 4;
+  online["unit"] = "-";
+  JsonObject onlineSpec = online["spec"].to<JsonObject>();
+  onlineSpec["format"] = "bool";
+
   return root;
 }
 
@@ -154,17 +208,12 @@ void setup() {
   delay(1000);
 
   Serial.println("setup - starting...");
+  init_display();
   
   // 0. configure hardware
-  //    disable ESP builtin LED
-  //    but not all ESP boards have this variable defined, so I should check the existance of `LED_BUILTIN`.
-  #ifdef LED_BUILTIN
-    // disable ESP32 Devkit-C built-in LED
-    pinMode(LED_BUILTIN, OUTPUT);
-    digitalWrite(LED_BUILTIN, LOW);
-  #endif
-  // set time to Saturday 00:00:00am Jan 1 2021
-  setTime(0,0,0,1,1,25);
+  rgbLedWrite(BOARD_RGB_LED_PIN, 0, 0, 0); 
+  // set time to Saturday 00:00:00am Jan 1 2025
+  setTime(0, 0, 0, 1, 1, 25);
 
   // 1. prepare wifi_client
   //    If SSL is enabled, add root ca to wifi_client to be used for secure connections
@@ -232,6 +281,7 @@ void setup() {
     Serial.println("**********************************");
     return;
   }
+  feature_values_init(saved_features);
 
   // 8. init sensors
   init_sensors();
@@ -258,7 +308,8 @@ void loop() {
   if (!mqtt_client.connected()) {
     Serial.println("loop - mqtt connecting...");
     mqtt_connect(saved_device_uuid);
-    // starts alarms to read sensors values
+    publish_initial_values();
+    // starts alarms
     alarms_enable();
   }
 

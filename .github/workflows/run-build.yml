@@ -86,7 +86,6 @@ jobs:
           cp secrets-template airquality-pir/secrets.h
           cp secrets-template barometer/secrets.h
           cp secrets-template dht-light/secrets.h
-          cp secrets-template power-outage/secrets.h
           cp secrets-template ac-beko/secrets.h
           cp secrets-template ac-lg/secrets.h
           cp secrets-template thermostat/secrets.h
@@ -100,9 +99,6 @@ jobs:
           cd ..
           cd dht-light
           arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./dht-light.ino
-          cd ..
-          cd power-outage
-          arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./power-outage.ino
           cd ..
           cd ac-beko
           arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./ac-beko.ino
@@ -129,14 +125,13 @@ jobs:
           cp secrets-template airquality-pir/secrets.h
           cp secrets-template barometer/secrets.h
           cp secrets-template dht-light/secrets.h
-          cp secrets-template power-outage/secrets.h
           cp secrets-template ac-beko/secrets.h
           cp secrets-template ac-lg/secrets.h
           cp secrets-template thermostat/secrets.h
 
       - name: Build and run unit tests
         run: |
-          for fw in airquality-pir barometer dht-light power-outage ac-beko ac-lg thermostat; do
+          for fw in airquality-pir barometer dht-light ac-beko ac-lg thermostat; do
             echo "::group::$fw"
             cmake -S $fw/tests -B $fw/tests/build
             cmake --build $fw/tests/build --parallel

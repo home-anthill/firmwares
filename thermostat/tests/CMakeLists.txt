@@ -90,7 +90,10 @@ target_link_libraries(test_mqtt_handler
 add_executable(test_display
   test_display.cpp
   ../display.cpp
+  ../feature_values.cpp
 )
+
+target_compile_definitions(test_display PRIVATE HOME_ANTHILL_TEST_OLED_DISPLAY)
 
 target_include_directories(test_display PRIVATE
   mocks   # Arduino.h, Wire.h, Adafruit_GFX.h, Adafruit_SSD1306.h stubs
@@ -99,6 +102,7 @@ target_include_directories(test_display PRIVATE
 
 target_link_libraries(test_display
   GTest::gtest_main
+  ArduinoJson
 )
 
 # ---------------------------------------------------------------------------
@@ -161,6 +165,8 @@ add_executable(test_main_ino
   test_main_ino.cpp
   main_ino_wrapper.cpp   # thin .cpp that #includes thermostat.ino
 )
+
+target_compile_definitions(test_main_ino PRIVATE HOME_ANTHILL_TEST_OLED_DISPLAY)
 
 target_include_directories(test_main_ino PRIVATE
   mocks   # Arduino.h, WiFi.h, WiFiClientSecure.h, PubSubClient.h, TimeAlarms.h stubs

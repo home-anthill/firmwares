@@ -20,7 +20,8 @@
 #include "mqtt_handler.h"
 #include "registration.h"
 #include "storage.h"
-#include "ir_lg.h"
+#include "ir_lg_controller.h"
+#include "feature_values.h"
 
 // =============================================================================
 // Stubs — provide every external symbol that <main-project-arduino-file>.ino references.
@@ -63,6 +64,45 @@ int register_insecure_server(WiFiClient& /*c*/, const char* /*mac*/,
 void mqtt_init(Client& /*c*/,
                std::function<void(char*, uint8_t*, unsigned int)> /*cb*/) {}
 void mqtt_connect(const char* /*uuid*/) {}
+void mqtt_notify_value(const char* /*device_uuid*/, const char* /*feature_uuid*/,
+                       const char* /*type*/, float /*value*/) {}
+
+// --- display ----------------------------------------------------------------
+
+void init_display() {}
+void update_display() {}
+
+// --- feature_values ---------------------------------------------------------
+
+struct FeatureValueSetCall {
+  std::string name;
+  float value;
+};
+
+struct FeatureValueCapture {
+  std::vector<FeatureValueSetCall> set_calls;
+  int init_calls{0};
+
+  static FeatureValueCapture& instance() {
+    static FeatureValueCapture s;
+    return s;
+  }
+  static void reset() { instance() = FeatureValueCapture{}; }
+};
+
+void feature_values_init(JsonArray /*features*/) {
+  FeatureValueCapture::instance().init_calls++;
+}
+void feature_values_clear() {}
+size_t feature_values_count() { return 0; }
+bool feature_values_get(size_t /*index*/, FeatureValue* /*value*/) { return false; }
+bool feature_values_set(const char* name, float value) {
+  FeatureValueCapture::instance().set_calls.push_back({
+    name ? name : "",
+    value
+  });
+  return true;
+}
 
 // --- ir_lg — capture ir_send_command calls ----------------------------------
 
@@ -137,6 +177,7 @@ protected:
     memset(saved_device_uuid, 0, sizeof(saved_device_uuid));
 
     IrCommandCapture::reset();
+    FeatureValueCapture::reset();
     g_stored_uuid_len = 0;
     memset(g_stored_uuid, 0, sizeof(g_stored_uuid));
   }
@@ -211,26 +252,29 @@ TEST_F(MainInoTest, GetFeatureUuidByNameTruncatesUuidToBufferSize) {
 // buildFeatures
 // =============================================================================
 
-TEST_F(MainInoTest, BuildFeaturesReturnsFourFeatures) {
+TEST_F(MainInoTest, BuildFeaturesReturnsFiveFeatures) {
   JsonDocument result = buildFeatures();
   JsonArray    arr    = result.as<JsonArray>();
 
-  ASSERT_EQ(arr.size(), 4u);
+  ASSERT_EQ(arr.size(), 5u);
   EXPECT_STREQ(arr[0]["name"].as<const char*>(), "on");
   EXPECT_STREQ(arr[1]["name"].as<const char*>(), "setpoint");
   EXPECT_STREQ(arr[2]["name"].as<const char*>(), "mode");
   EXPECT_STREQ(arr[3]["name"].as<const char*>(), "fanSpeed");
+  EXPECT_STREQ(arr[4]["name"].as<const char*>(), "online");
 }
 
 TEST_F(MainInoTest, BuildFeaturesHasCorrectFieldsPerEntry) {
   JsonDocument result = buildFeatures();
   JsonArray    arr    = result.as<JsonArray>();
 
-  // All features are type "controller"
-  for (size_t i = 0; i < arr.size(); i++) {
+  // Command features are type "controller"; online is a sensor heartbeat.
+  for (size_t i = 0; i < arr.size() - 1; i++) {
     EXPECT_STREQ(arr[i]["type"].as<const char*>(), "controller") << "entry " << i;
     EXPECT_TRUE(arr[i]["enable"].as<bool>()) << "entry " << i;
   }
+  EXPECT_STREQ(arr[4]["type"].as<const char*>(), "sensor");
+  EXPECT_TRUE(arr[4]["enable"].as<bool>());
 
   // Per-feature specifics
   EXPECT_STREQ(arr[0]["unit"].as<const char*>(), "-");
@@ -244,6 +288,9 @@ TEST_F(MainInoTest, BuildFeaturesHasCorrectFieldsPerEntry) {
 
   EXPECT_STREQ(arr[3]["unit"].as<const char*>(), "-");
   EXPECT_EQ(arr[3]["order"].as<int>(), 4);
+
+  EXPECT_STREQ(arr[4]["unit"].as<const char*>(), "-");
+  EXPECT_EQ(arr[4]["order"].as<int>(), 5);
 }
 
 TEST_F(MainInoTest, BuildFeaturesIncludesAdmissionSpecs) {
@@ -301,6 +348,10 @@ TEST_F(MainInoTest, BuildFeaturesIncludesAdmissionSpecs) {
   EXPECT_STREQ(fanSpeedList[2]["text"].as<const char*>(), "Min");
   EXPECT_EQ(fanSpeedList[3]["value"].as<int>(), 5);
   EXPECT_STREQ(fanSpeedList[3]["text"].as<const char*>(), "Auto");
+
+  JsonObject onlineSpec = arr[4]["spec"].as<JsonObject>();
+  ASSERT_FALSE(onlineSpec.isNull());
+  EXPECT_STREQ(onlineSpec["format"].as<const char*>(), "bool");
 }
 
 // =============================================================================
@@ -321,4 +372,28 @@ TEST_F(MainInoTest, MqttCallbackDelegatesToIrSendCommand) {
   ASSERT_EQ(IrCommandCapture::instance().calls.size(), 1u);
   EXPECT_EQ(IrCommandCapture::instance().calls[0].topic, topic);
   EXPECT_EQ(IrCommandCapture::instance().calls[0].length, len);
+}
+
+TEST_F(MainInoTest, MqttCallbackRecordsLegacyCommandValueForDisplay) {
+  const char* topic   = "devices/dev-uuid/values";
+  const char* payload = R"([{"featureName":"on","value":1}])";
+  auto* p = reinterpret_cast<uint8_t*>(const_cast<char*>(payload));
+
+  mqtt_callback(const_cast<char*>(topic), p, static_cast<unsigned int>(strlen(payload)));
+
+  ASSERT_EQ(FeatureValueCapture::instance().set_calls.size(), 1u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "on");
+  EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[0].value, 1.0f);
+}
+
+TEST_F(MainInoTest, MqttCallbackRecordsSignedCommandPayloadValueForDisplay) {
+  const char* topic = "devices/dev-uuid/values";
+  const char* payload = R"([{"featureName":"setpoint","payload":{"value":22}}])";
+  auto* p = reinterpret_cast<uint8_t*>(const_cast<char*>(payload));
+
+  mqtt_callback(const_cast<char*>(topic), p, static_cast<unsigned int>(strlen(payload)));
+
+  ASSERT_EQ(FeatureValueCapture::instance().set_calls.size(), 1u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "setpoint");
+  EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[0].value, 22.0f);
 }

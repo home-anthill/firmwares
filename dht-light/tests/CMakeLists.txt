@@ -85,6 +85,44 @@ target_link_libraries(test_mqtt_handler
 )
 
 # ---------------------------------------------------------------------------
+# Test executable: feature_values
+# ---------------------------------------------------------------------------
+add_executable(test_feature_values
+  test_feature_values.cpp
+  ../feature_values.cpp
+)
+
+target_include_directories(test_feature_values PRIVATE
+  mocks   # Arduino.h stubs
+  ..      # feature_values.h
+)
+
+target_link_libraries(test_feature_values
+  GTest::gtest_main
+  ArduinoJson
+)
+
+# ---------------------------------------------------------------------------
+# Test executable: display
+# ---------------------------------------------------------------------------
+add_executable(test_display
+  test_display.cpp
+  ../display.cpp
+)
+
+target_compile_definitions(test_display PRIVATE HOME_ANTHILL_TEST_OLED_DISPLAY)
+
+target_include_directories(test_display PRIVATE
+  mocks   # Arduino.h, Wire.h, Adafruit_GFX.h, Adafruit_SSD1306.h stubs
+  ..      # display.h, secrets.h
+)
+
+target_link_libraries(test_display
+  GTest::gtest_main
+  ArduinoJson
+)
+
+# ---------------------------------------------------------------------------
 # Test executable: dht_sensor
 # ---------------------------------------------------------------------------
 add_executable(test_dht_sensor
@@ -123,7 +161,7 @@ target_link_libraries(test_light_sensor
 #
 # <main-project-arduino-file>.ino is compiled as C++ (set_source_files_properties below).
 # All external dependencies (wifi_handler, registration, mqtt_handler,
-# storage, dht_sensor, light_sensor) are replaced by stubs defined inside
+# storage, dht_sensor, light_sensor, feature_values) are replaced by stubs defined inside
 # test_main_ino.cpp itself, so no additional .cpp files are needed.
 # setup() and loop() compile and link but are never called by the tests.
 # ---------------------------------------------------------------------------
@@ -149,6 +187,8 @@ enable_testing()
 add_test(NAME storage_tests       COMMAND test_storage)
 add_test(NAME registration_tests  COMMAND test_registration)
 add_test(NAME mqtt_handler_tests  COMMAND test_mqtt_handler)
+add_test(NAME feature_values_tests COMMAND test_feature_values)
+add_test(NAME display_tests       COMMAND test_display)
 add_test(NAME dht_sensor_tests    COMMAND test_dht_sensor)
 add_test(NAME light_sensor_tests  COMMAND test_light_sensor)
 add_test(NAME main_ino_tests   COMMAND test_main_ino)

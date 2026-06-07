@@ -1,7 +1,7 @@
 #pragma once
 
 // ---------------------------------------------------------------------------
-// IRremoteESP8266 LG protocol mock for host-side (native) unit test
+// IRremoteESP8266 LG protocol mock for host-side host unit test
 // compilation.
 //
 // The singleton IrLgMockState captures every call made to the IRLgAc

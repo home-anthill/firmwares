@@ -23,6 +23,7 @@
 #include "storage.h"
 #include "airquality_sensor.h"
 #include "pir_sensor.h"
+#include "feature_values.h"
 
 // =============================================================================
 // Stubs — provide every external symbol that <main-project-arduino-file>.ino references.
@@ -94,6 +95,11 @@ void mqtt_notify_value(const char* device_uuid, const char* feature_uuid,
   });
 }
 
+// --- display ----------------------------------------------------------------
+
+void init_display() {}
+void update_display() {}
+
 // --- airquality_sensor (controllable return values) -------------------------
 
 static bool g_airquality_has_newvalue = false;
@@ -109,6 +115,48 @@ static int g_pir_value      = 0;
 void pir_init_sensor()       {}
 int  pir_get_prev_value()    { return g_pir_prev_value; }
 int  pir_get_value()         { return g_pir_value; }
+
+// --- feature_values ---------------------------------------------------------
+
+struct FeatureValueSetCall {
+  std::string name;
+  float value;
+};
+
+struct FeatureValueCapture {
+  std::vector<FeatureValueSetCall> set_calls;
+  int init_calls{0};
+
+  static FeatureValueCapture& instance() {
+    static FeatureValueCapture s;
+    return s;
+  }
+  static void reset() { instance() = FeatureValueCapture{}; }
+};
+
+void feature_values_init(JsonArray /*features*/) {
+  FeatureValueCapture::instance().init_calls++;
+}
+
+void feature_values_clear() {
+  FeatureValueCapture::reset();
+}
+
+size_t feature_values_count() {
+  return 0;
+}
+
+bool feature_values_set(const char* name, float value) {
+  FeatureValueCapture::instance().set_calls.push_back({
+    name ? name : "",
+    value
+  });
+  return true;
+}
+
+bool feature_values_get(size_t /*index*/, FeatureValue* /*value*/) {
+  return false;
+}
 
 // --- storage ----------------------------------------------------------------
 
@@ -136,8 +184,9 @@ size_t storage_set_uuid(const char* uuid) {
 
 bool         get_feature_uuid_by_name(char* featureUuid, size_t max_len, const char* name);
 JsonDocument buildFeatures();
-void         read_airquality_sensor_value();
-void         read_pir_sensor_value();
+void         read_and_send_airquality_value();
+void         read_and_send_pir_value();
+void         send_online_status();
 
 // Expose <main-project-arduino-file>.ino globals so the fixture can reset them.
 extern JsonDocument doc_features;
@@ -156,6 +205,7 @@ protected:
     memset(saved_device_uuid, 0, sizeof(saved_device_uuid));
 
     MqttNotifyCapture::reset();
+    FeatureValueCapture::reset();
     g_airquality_has_newvalue = false;
     g_airquality_value        = 0;
     g_pir_prev_value          = -1;
@@ -226,13 +276,14 @@ TEST_F(MainInoTest, GetFeatureUuidByNameTruncatesUuidToBufferSize) {
 // buildFeatures
 // =============================================================================
 
-TEST_F(MainInoTest, BuildFeaturesReturnsTwoFeatures) {
+TEST_F(MainInoTest, BuildFeaturesReturnsThreeFeatures) {
   JsonDocument result = buildFeatures();
   JsonArray    arr    = result.as<JsonArray>();
 
-  ASSERT_EQ(arr.size(), 2u);
+  ASSERT_EQ(arr.size(), 3u);
   EXPECT_STREQ(arr[0]["name"].as<const char*>(), "airquality");
   EXPECT_STREQ(arr[1]["name"].as<const char*>(), "motion");
+  EXPECT_STREQ(arr[2]["name"].as<const char*>(), "online");
 }
 
 TEST_F(MainInoTest, BuildFeaturesHasCorrectFieldsPerEntry) {
@@ -250,6 +301,12 @@ TEST_F(MainInoTest, BuildFeaturesHasCorrectFieldsPerEntry) {
   EXPECT_STREQ(arr[1]["unit"].as<const char*>(), "-");
   EXPECT_TRUE(arr[1]["enable"].as<bool>());
   EXPECT_EQ(arr[1]["order"].as<int>(), 2);
+
+  // online
+  EXPECT_STREQ(arr[2]["type"].as<const char*>(), "sensor");
+  EXPECT_STREQ(arr[2]["unit"].as<const char*>(), "-");
+  EXPECT_TRUE(arr[2]["enable"].as<bool>());
+  EXPECT_EQ(arr[2]["order"].as<int>(), 4);
 }
 
 TEST_F(MainInoTest, BuildFeaturesIncludesAdmissionSpecs) {
@@ -271,10 +328,18 @@ TEST_F(MainInoTest, BuildFeaturesIncludesAdmissionSpecs) {
   EXPECT_TRUE(motionSpec["max"].isNull());
   EXPECT_TRUE(motionSpec["step"].isNull());
   EXPECT_TRUE(motionSpec["list"].isNull());
+
+  JsonObject onlineSpec = arr[2]["spec"].as<JsonObject>();
+  ASSERT_FALSE(onlineSpec.isNull());
+  EXPECT_STREQ(onlineSpec["format"].as<const char*>(), "bool");
+  EXPECT_TRUE(onlineSpec["min"].isNull());
+  EXPECT_TRUE(onlineSpec["max"].isNull());
+  EXPECT_TRUE(onlineSpec["step"].isNull());
+  EXPECT_TRUE(onlineSpec["list"].isNull());
 }
 
 // =============================================================================
-// read_airquality_sensor_value
+// read_and_send_airquality_value
 // =============================================================================
 
 TEST_F(MainInoTest, ReadAirqualityPublishesWhenHasNewValueAndFeatureFound) {
@@ -283,9 +348,12 @@ TEST_F(MainInoTest, ReadAirqualityPublishesWhenHasNewValueAndFeatureFound) {
   g_airquality_has_newvalue = true;
   g_airquality_value        = 2;  // LOW_POLLUTION
 
-  read_airquality_sensor_value();
+  read_and_send_airquality_value();
 
   ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 1u);
+  ASSERT_EQ(FeatureValueCapture::instance().set_calls.size(), 1u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "airquality");
+  EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[0].value, 2.0f);
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].type, "airquality");
   EXPECT_FLOAT_EQ(MqttNotifyCapture::instance().calls[0].value, 2.0f);
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].device_uuid, "device-uuid-test-0000-000000000000");
@@ -297,9 +365,10 @@ TEST_F(MainInoTest, ReadAirqualitySkipsPublishWhenNoNewValue) {
   addFeature("airquality", "aq-uuid-0000-0000-000000000001");
   g_airquality_has_newvalue = false;
 
-  read_airquality_sensor_value();
+  read_and_send_airquality_value();
 
   EXPECT_EQ(MqttNotifyCapture::instance().calls.size(), 0u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls.size(), 0u);
 }
 
 TEST_F(MainInoTest, ReadAirqualitySkipsPublishWhenFeatureNotFound) {
@@ -308,13 +377,16 @@ TEST_F(MainInoTest, ReadAirqualitySkipsPublishWhenFeatureNotFound) {
   g_airquality_has_newvalue = true;
   g_airquality_value        = 3;
 
-  read_airquality_sensor_value();
+  read_and_send_airquality_value();
 
   EXPECT_EQ(MqttNotifyCapture::instance().calls.size(), 0u);
+  ASSERT_EQ(FeatureValueCapture::instance().set_calls.size(), 1u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "airquality");
+  EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[0].value, 3.0f);
 }
 
 // =============================================================================
-// read_pir_sensor_value
+// read_and_send_pir_value
 // =============================================================================
 
 TEST_F(MainInoTest, ReadPirPublishesWhenValueChangedAndFeatureFound) {
@@ -323,9 +395,12 @@ TEST_F(MainInoTest, ReadPirPublishesWhenValueChangedAndFeatureFound) {
   g_pir_prev_value = 0;
   g_pir_value      = 1;  // changed
 
-  read_pir_sensor_value();
+  read_and_send_pir_value();
 
   ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 1u);
+  ASSERT_EQ(FeatureValueCapture::instance().set_calls.size(), 1u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "motion");
+  EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[0].value, 1.0f);
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].type, "motion");
   EXPECT_FLOAT_EQ(MqttNotifyCapture::instance().calls[0].value, 1.0f);
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].device_uuid, "device-uuid-test-0000-000000000000");
@@ -338,9 +413,10 @@ TEST_F(MainInoTest, ReadPirSkipsPublishWhenValueUnchanged) {
   g_pir_prev_value = 1;
   g_pir_value      = 1;  // same
 
-  read_pir_sensor_value();
+  read_and_send_pir_value();
 
   EXPECT_EQ(MqttNotifyCapture::instance().calls.size(), 0u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls.size(), 0u);
 }
 
 TEST_F(MainInoTest, ReadPirSkipsPublishWhenFeatureNotFound) {
@@ -349,7 +425,31 @@ TEST_F(MainInoTest, ReadPirSkipsPublishWhenFeatureNotFound) {
   g_pir_prev_value = 0;
   g_pir_value      = 1;  // changed, but no feature
 
-  read_pir_sensor_value();
+  read_and_send_pir_value();
 
   EXPECT_EQ(MqttNotifyCapture::instance().calls.size(), 0u);
+  ASSERT_EQ(FeatureValueCapture::instance().set_calls.size(), 1u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "motion");
+  EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[0].value, 1.0f);
+}
+
+// =============================================================================
+// send_online_status
+// =============================================================================
+
+TEST_F(MainInoTest, SendOnlineStatusPublishesAndRecordsFeatureValue) {
+  strncpy(saved_device_uuid, "device-uuid-test-0000-000000000000", 36);
+  addFeature("online", "on-uuid-0000-0000-000000000003");
+
+  send_online_status();
+
+  ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 1u);
+  EXPECT_EQ(MqttNotifyCapture::instance().calls[0].type, "online");
+  EXPECT_FLOAT_EQ(MqttNotifyCapture::instance().calls[0].value, 1.0f);
+  EXPECT_EQ(MqttNotifyCapture::instance().calls[0].device_uuid, "device-uuid-test-0000-000000000000");
+  EXPECT_EQ(MqttNotifyCapture::instance().calls[0].feature_uuid, "on-uuid-0000-0000-000000000003");
+
+  ASSERT_EQ(FeatureValueCapture::instance().set_calls.size(), 1u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "online");
+  EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[0].value, 1.0f);
 }

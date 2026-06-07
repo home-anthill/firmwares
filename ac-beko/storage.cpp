@@ -52,3 +52,34 @@ size_t storage_set_features(JsonArray features) {
   preferences.end();
   return len;
 }
+
+void storage_get_feature_values(JsonArray featureValues) {
+  preferences.begin("device", true);
+  String val = preferences.getString("featureValues", "");
+  if (val.length() == 0) {
+    preferences.end();
+    return;
+  }
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, val);
+  if (err) {
+    Serial.printf("storage_get_feature_values - deserializeJson failed: %s\n", err.c_str());
+    preferences.end();
+    return;
+  }
+  JsonArray values = doc.as<JsonArray>();
+  for (size_t i = 0; i < values.size(); i++) {
+    featureValues.add(values[i]);
+  }
+  preferences.end();
+}
+
+size_t storage_set_feature_values(JsonArray featureValues) {
+  preferences.begin("device", false);
+  preferences.putInt("numfeatures", featureValues.size());
+  String output;
+  serializeJson(featureValues, output);
+  size_t len = preferences.putString("featureValues", output.c_str());
+  preferences.end();
+  return len;
+}

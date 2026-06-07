@@ -22,6 +22,7 @@
 #include "registration.h"
 #include "storage.h"
 #include "barometer_sensor.h"
+#include "feature_values.h"
 
 // =============================================================================
 // Stubs — provide every external symbol that <main-project-arduino-file>.ino references.
@@ -63,7 +64,9 @@ int register_insecure_server(WiFiClient& /*c*/, const char* /*mac*/,
 
 void mqtt_init(Client& /*c*/,
                std::function<void(char*, uint8_t*, unsigned int)> /*cb*/) {}
-void mqtt_connect(const char* /*uuid*/) {}
+void mqtt_connect(const char* /*uuid*/) {
+  MqttMockState::instance().connected_val = true;
+}
 
 // Capture every mqtt_notify_value() call so tests can inspect it.
 struct NotifyCall {
@@ -93,6 +96,11 @@ void mqtt_notify_value(const char* device_uuid, const char* feature_uuid,
   });
 }
 
+// --- display ----------------------------------------------------------------
+
+void init_display() {}
+void update_display() {}
+
 // --- barometer_sensor (controllable return values) --------------------------
 
 static float g_barometer_temp     = NAN;
@@ -100,6 +108,48 @@ static float g_barometer_pressure = NAN;
 void  barometer_init_sensor()        {}
 float barometer_get_temperature()    { return g_barometer_temp; }
 float barometer_get_airpressure()    { return g_barometer_pressure; }
+
+// --- feature_values ---------------------------------------------------------
+
+struct FeatureValueSetCall {
+  std::string name;
+  float value;
+};
+
+struct FeatureValueCapture {
+  std::vector<FeatureValueSetCall> set_calls;
+  int init_calls{0};
+
+  static FeatureValueCapture& instance() {
+    static FeatureValueCapture s;
+    return s;
+  }
+  static void reset() { instance() = FeatureValueCapture{}; }
+};
+
+void feature_values_init(JsonArray /*features*/) {
+  FeatureValueCapture::instance().init_calls++;
+}
+
+void feature_values_clear() {
+  FeatureValueCapture::reset();
+}
+
+size_t feature_values_count() {
+  return 0;
+}
+
+bool feature_values_set(const char* name, float value) {
+  FeatureValueCapture::instance().set_calls.push_back({
+    name ? name : "",
+    value
+  });
+  return true;
+}
+
+bool feature_values_get(size_t /*index*/, FeatureValue* /*value*/) {
+  return false;
+}
 
 // --- storage ----------------------------------------------------------------
 
@@ -127,7 +177,10 @@ size_t storage_set_uuid(const char* uuid) {
 
 bool         get_feature_uuid_by_name(char* featureUuid, size_t max_len, const char* name);
 JsonDocument buildFeatures();
-void         read_barometer_sensor_value();
+void         read_and_send_barometer_value();
+void         send_online_status();
+void         publish_initial_values();
+void         loop();
 
 // Expose <main-project-arduino-file>.ino globals so the fixture can reset them.
 extern JsonDocument doc_features;
@@ -146,6 +199,8 @@ protected:
     memset(saved_device_uuid, 0, sizeof(saved_device_uuid));
 
     MqttNotifyCapture::reset();
+    MqttMockState::reset();
+    FeatureValueCapture::reset();
     g_barometer_temp     = NAN;
     g_barometer_pressure = NAN;
     g_stored_uuid_len    = 0;
@@ -214,13 +269,14 @@ TEST_F(MainInoTest, GetFeatureUuidByNameTruncatesUuidToBufferSize) {
 // buildFeatures
 // =============================================================================
 
-TEST_F(MainInoTest, BuildFeaturesReturnsTwoFeatures) {
+TEST_F(MainInoTest, BuildFeaturesReturnsThreeFeatures) {
   JsonDocument result = buildFeatures();
   JsonArray    arr    = result.as<JsonArray>();
 
-  ASSERT_EQ(arr.size(), 2u);
+  ASSERT_EQ(arr.size(), 3u);
   EXPECT_STREQ(arr[0]["name"].as<const char*>(), "airpressure");
   EXPECT_STREQ(arr[1]["name"].as<const char*>(), "temperature");
+  EXPECT_STREQ(arr[2]["name"].as<const char*>(), "online");
 }
 
 TEST_F(MainInoTest, BuildFeaturesHasCorrectFieldsPerEntry) {
@@ -238,6 +294,12 @@ TEST_F(MainInoTest, BuildFeaturesHasCorrectFieldsPerEntry) {
   EXPECT_STREQ(arr[1]["unit"].as<const char*>(), "°C");
   EXPECT_TRUE(arr[1]["enable"].as<bool>());
   EXPECT_EQ(arr[1]["order"].as<int>(), 2);
+
+  // online
+  EXPECT_STREQ(arr[2]["type"].as<const char*>(), "sensor");
+  EXPECT_STREQ(arr[2]["unit"].as<const char*>(), "-");
+  EXPECT_TRUE(arr[2]["enable"].as<bool>());
+  EXPECT_EQ(arr[2]["order"].as<int>(), 4);
 }
 
 TEST_F(MainInoTest, BuildFeaturesIncludesAdmissionSpecs) {
@@ -259,10 +321,18 @@ TEST_F(MainInoTest, BuildFeaturesIncludesAdmissionSpecs) {
   EXPECT_FLOAT_EQ(temperatureSpec["max"].as<float>(), 85.0f);
   EXPECT_FLOAT_EQ(temperatureSpec["step"].as<float>(), 0.5f);
   EXPECT_TRUE(temperatureSpec["list"].isNull());
+
+  JsonObject onlineSpec = arr[2]["spec"].as<JsonObject>();
+  ASSERT_FALSE(onlineSpec.isNull());
+  EXPECT_STREQ(onlineSpec["format"].as<const char*>(), "bool");
+  EXPECT_TRUE(onlineSpec["min"].isNull());
+  EXPECT_TRUE(onlineSpec["max"].isNull());
+  EXPECT_TRUE(onlineSpec["step"].isNull());
+  EXPECT_TRUE(onlineSpec["list"].isNull());
 }
 
 // =============================================================================
-// read_barometer_sensor_value
+// read_and_send_barometer_value
 // =============================================================================
 
 TEST_F(MainInoTest, ReadBarometerPublishesBothReadingsWhenValid) {
@@ -272,9 +342,14 @@ TEST_F(MainInoTest, ReadBarometerPublishesBothReadingsWhenValid) {
   g_barometer_temp     = 21.5f;
   g_barometer_pressure = 101.3f;
 
-  read_barometer_sensor_value();
+  read_and_send_barometer_value();
 
   ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 2u);
+  ASSERT_EQ(FeatureValueCapture::instance().set_calls.size(), 2u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "temperature");
+  EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[0].value, 21.5f);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[1].name, "airpressure");
+  EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[1].value, 101.3f);
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].type, "temperature");
   EXPECT_FLOAT_EQ(MqttNotifyCapture::instance().calls[0].value, 21.5f);
   EXPECT_EQ(MqttNotifyCapture::instance().calls[1].type, "airpressure");
@@ -288,9 +363,11 @@ TEST_F(MainInoTest, ReadBarometerSkipsTemperatureWhenNan) {
   g_barometer_temp     = NAN;
   g_barometer_pressure = 101.3f;
 
-  read_barometer_sensor_value();
+  read_and_send_barometer_value();
 
   ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 1u);
+  ASSERT_EQ(FeatureValueCapture::instance().set_calls.size(), 1u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "airpressure");
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].type, "airpressure");
 }
 
@@ -301,9 +378,11 @@ TEST_F(MainInoTest, ReadBarometerSkipsAirpressureWhenNan) {
   g_barometer_temp     = 21.5f;
   g_barometer_pressure = NAN;
 
-  read_barometer_sensor_value();
+  read_and_send_barometer_value();
 
   ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 1u);
+  ASSERT_EQ(FeatureValueCapture::instance().set_calls.size(), 1u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "temperature");
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].type, "temperature");
 }
 
@@ -312,7 +391,68 @@ TEST_F(MainInoTest, ReadBarometerSkipsPublishWhenFeatureNotFound) {
   g_barometer_temp     = 21.5f;
   g_barometer_pressure = 101.3f;
 
-  read_barometer_sensor_value();
+  read_and_send_barometer_value();
 
   EXPECT_EQ(MqttNotifyCapture::instance().calls.size(), 0u);
+  ASSERT_EQ(FeatureValueCapture::instance().set_calls.size(), 2u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "temperature");
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[1].name, "airpressure");
+}
+
+// =============================================================================
+// send_online_status
+// =============================================================================
+
+TEST_F(MainInoTest, SendOnlineStatusPublishesAndRecordsFeatureValue) {
+  strncpy(saved_device_uuid, "device-uuid-test-0000-000000000000", 36);
+  addFeature("online", "on-uuid-0000-0000-000000000003");
+
+  send_online_status();
+
+  ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 1u);
+  EXPECT_EQ(MqttNotifyCapture::instance().calls[0].type, "online");
+  EXPECT_FLOAT_EQ(MqttNotifyCapture::instance().calls[0].value, 1.0f);
+  EXPECT_EQ(MqttNotifyCapture::instance().calls[0].device_uuid, "device-uuid-test-0000-000000000000");
+  EXPECT_EQ(MqttNotifyCapture::instance().calls[0].feature_uuid, "on-uuid-0000-0000-000000000003");
+
+  ASSERT_EQ(FeatureValueCapture::instance().set_calls.size(), 1u);
+  EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "online");
+  EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[0].value, 1.0f);
+}
+
+// =============================================================================
+// publish_initial_values / loop MQTT reconnect path
+// =============================================================================
+
+TEST_F(MainInoTest, PublishInitialValuesSendsSensorValuesAndOnlineStatus) {
+  strncpy(saved_device_uuid, "device-uuid-test-0000-000000000000", 36);
+  addFeature("temperature", "temp-uuid-0000-0000-000000000002");
+  addFeature("airpressure", "ap-uuid-0000-0000-000000000001");
+  addFeature("online", "on-uuid-0000-0000-000000000003");
+  g_barometer_temp     = 21.5f;
+  g_barometer_pressure = 101.3f;
+
+  publish_initial_values();
+
+  ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 3u);
+  EXPECT_EQ(MqttNotifyCapture::instance().calls[0].type, "temperature");
+  EXPECT_EQ(MqttNotifyCapture::instance().calls[1].type, "airpressure");
+  EXPECT_EQ(MqttNotifyCapture::instance().calls[2].type, "online");
+}
+
+TEST_F(MainInoTest, LoopPublishesInitialValuesImmediatelyAfterMqttConnect) {
+  strncpy(saved_device_uuid, "device-uuid-test-0000-000000000000", 36);
+  addFeature("temperature", "temp-uuid-0000-0000-000000000002");
+  addFeature("airpressure", "ap-uuid-0000-0000-000000000001");
+  addFeature("online", "on-uuid-0000-0000-000000000003");
+  g_barometer_temp     = 21.5f;
+  g_barometer_pressure = 101.3f;
+  MqttMockState::instance().connected_val = false;
+
+  loop();
+
+  ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 3u);
+  EXPECT_EQ(MqttNotifyCapture::instance().calls[0].type, "temperature");
+  EXPECT_EQ(MqttNotifyCapture::instance().calls[1].type, "airpressure");
+  EXPECT_EQ(MqttNotifyCapture::instance().calls[2].type, "online");
 }

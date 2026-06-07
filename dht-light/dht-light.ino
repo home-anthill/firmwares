@@ -18,14 +18,20 @@
 #include "storage.h"
 #include "dht_sensor.h"
 #include "light_sensor.h"
+#include "display.h"
+#include "feature_values.h"
+
+// build-in RGB LED
+#define BOARD_RGB_LED_PIN 38
 
 char mac_address[18];
 
 // private functions
 void mqtt_callback(char* topic, uint8_t* payload, unsigned int length);
 bool get_feature_uuid_by_name(char* featureUuid, size_t max_len, const char* name);
-void read_dht_sensor_value();
-void read_light_sensor_value();
+void read_and_send_dht_value();
+void read_and_send_light_value();
+void send_online_status();
 void alarms_init();
 void alarms_enable();
 void alarms_disable();
@@ -35,6 +41,10 @@ JsonDocument buildFeatures();
 // alarms used to periodically read values from sensors
 AlarmID_t alarm_dht;
 AlarmID_t alarm_light;
+AlarmID_t alarm_online;
+#if OLED_DISPLAY == true
+AlarmID_t alarm_display;
+#endif
 
 // device_uuid global variable
 char saved_device_uuid[37];
@@ -60,64 +70,100 @@ bool get_feature_uuid_by_name(char* featureUuid, size_t max_len, const char* nam
   return false;
 }
 
-void read_dht_sensor_value() {
-  Serial.println("read_dht_sensor_value - called");
+void read_and_send_dht_value() {
+  Serial.println("read_and_send_dht_value - called");
   float temp = dht_get_temperature();
   if (isnan(temp)) {
-      Serial.println("read_dht_sensor_value - error reading temperature!");
+      Serial.println("read_and_send_dht_value - error reading temperature!");
   } else {
-      Serial.printf("read_dht_sensor_value - temperature: %.2f °C\n", temp);
+      Serial.printf("read_and_send_dht_value - temperature: %.2f °C\n", temp);
       const char* feature_name = "temperature";
+      feature_values_set(feature_name, temp);
       char temp_feature_uuid[37];
       if (get_feature_uuid_by_name(temp_feature_uuid, sizeof(temp_feature_uuid), feature_name)) {
         mqtt_notify_value(saved_device_uuid, temp_feature_uuid, feature_name, temp);
       } else {
-        Serial.println("read_dht_sensor_value - feature uuid not found for temperature");
+        Serial.println("read_and_send_dht_value - feature uuid not found for temperature");
       }
   }
 
   float hum = dht_get_humidity();
   if (isnan(hum)) {
-      Serial.println("read_dht_sensor_value - error reading humidity!");
+      Serial.println("read_and_send_dht_value - error reading humidity!");
   } else {
-      Serial.printf("read_dht_sensor_value - humidity: %.2f %%\n", hum);
+      Serial.printf("read_and_send_dht_value - humidity: %.2f %%\n", hum);
       const char* feature_name = "humidity";
+      feature_values_set(feature_name, hum);
       char hum_feature_uuid[37];
       if (get_feature_uuid_by_name(hum_feature_uuid, sizeof(hum_feature_uuid), feature_name)) {
         mqtt_notify_value(saved_device_uuid, hum_feature_uuid, feature_name, hum);
       } else {
-        Serial.println("read_dht_sensor_value - feature uuid not found for humidity");
+        Serial.println("read_and_send_dht_value - feature uuid not found for humidity");
       }
   }
 }
 
-void read_light_sensor_value() {
+void read_and_send_light_value() {
   long value = light_get_value();
-  Serial.printf("read_light_sensor_value - light: %ld lux\n", value);
+  Serial.printf("read_and_send_light_value - light: %ld lux\n", value);
   const char* feature_name = "light";
+  feature_values_set(feature_name, value);
   char light_feature_uuid[37];
   if (get_feature_uuid_by_name(light_feature_uuid, sizeof(light_feature_uuid), feature_name)) {
     mqtt_notify_value(saved_device_uuid, light_feature_uuid, feature_name, value);
   } else {
-    Serial.println("read_light_sensor_value - feature uuid not found for light");
+    Serial.println("read_and_send_light_value - feature uuid not found for light");
   }
 }
 
+void send_online_status() {
+  Serial.println("send_online_status - called");
+  const char* feature_name = "online";
+  feature_values_set(feature_name, 1);
+  char feature_uuid[37];
+  if (get_feature_uuid_by_name(feature_uuid, sizeof(feature_uuid), feature_name)) {
+    mqtt_notify_value(saved_device_uuid, feature_uuid, feature_name, 1);
+  } else {
+    Serial.println("send_online_status - feature uuid not found for online");
+  }
+}
+
+void publish_initial_values() {
+  Serial.println("publish_initial_values - called");
+  read_and_send_dht_value();
+  read_and_send_light_value();
+  send_online_status();
+}
+
 void alarms_init() {
-  alarm_dht = Alarm.timerRepeat(30, read_dht_sensor_value);
+  alarm_dht = Alarm.timerRepeat(30, read_and_send_dht_value);
   Alarm.disable(alarm_dht);
-  alarm_light = Alarm.timerRepeat(45, read_light_sensor_value);
+  alarm_light = Alarm.timerRepeat(45, read_and_send_light_value);
   Alarm.disable(alarm_light);
+  alarm_online = Alarm.timerRepeat(60, send_online_status);
+  Alarm.disable(alarm_online);
+#if OLED_DISPLAY == true
+  alarm_display = Alarm.timerRepeat(5, update_display);
+  Alarm.disable(alarm_display);
+#endif
 }
 
 void alarms_enable() {
   Alarm.enable(alarm_dht);
   Alarm.enable(alarm_light);
+  Alarm.enable(alarm_online);
+#if OLED_DISPLAY == true
+  Alarm.enable(alarm_display);
+#endif
 }
 
 void alarms_disable() {
   Alarm.disable(alarm_dht);
   Alarm.disable(alarm_light);
+  Alarm.disable(alarm_online);
+#if OLED_DISPLAY == true
+  Alarm.disable(alarm_display);
+#endif
 }
 
 void init_sensors() {
@@ -134,29 +180,29 @@ JsonDocument buildFeatures() {
   JsonDocument root;
   JsonArray array = root.to<JsonArray>();
 
-  JsonObject humidity = array.add<JsonObject>();
-  humidity["type"] = "sensor";
-  humidity["name"] = "humidity";
-  humidity["enable"] = true;
-  humidity["order"] = 1;
-  humidity["unit"] = "%";
-  JsonObject humiditySpec = humidity["spec"].to<JsonObject>();
-  humiditySpec["format"] = "float";
-  humiditySpec["min"] = 0;
-  humiditySpec["max"] = 100;
-  humiditySpec["step"] = 2.5; // specified in DHT22 doc
-
   JsonObject temperature = array.add<JsonObject>();
   temperature["type"] = "sensor";
   temperature["name"] = "temperature";
   temperature["enable"] = true;
-  temperature["order"] = 2;
+  temperature["order"] = 1;
   temperature["unit"] = "°C";
   JsonObject temperatureSpec = temperature["spec"].to<JsonObject>();
   temperatureSpec["format"] = "float";
   temperatureSpec["min"] = -40; // specified in DHT22 doc
   temperatureSpec["max"] = 80; // specified in DHT22 doc
   temperatureSpec["step"] = 0.05; // specified in DHT22 doc
+
+  JsonObject humidity = array.add<JsonObject>();
+  humidity["type"] = "sensor";
+  humidity["name"] = "humidity";
+  humidity["enable"] = true;
+  humidity["order"] = 2;
+  humidity["unit"] = "%";
+  JsonObject humiditySpec = humidity["spec"].to<JsonObject>();
+  humiditySpec["format"] = "float";
+  humiditySpec["min"] = 0;
+  humiditySpec["max"] = 100;
+  humiditySpec["step"] = 2.5; // specified in DHT22 doc
 
   JsonObject light = array.add<JsonObject>();
   light["type"] = "sensor";
@@ -170,6 +216,15 @@ JsonDocument buildFeatures() {
   lightSpec["max"] = 40000; // specified in TSL2561 doc
   lightSpec["step"] = 1;
 
+  JsonObject online = array.add<JsonObject>();
+  online["type"] = "sensor";
+  online["name"] = "online";
+  online["enable"] = true;
+  online["order"] = 4;
+  online["unit"] = "-";
+  JsonObject onlineSpec = online["spec"].to<JsonObject>();
+  onlineSpec["format"] = "bool";
+
   return root;
 }
 
@@ -178,17 +233,12 @@ void setup() {
   delay(1000);
 
   Serial.println("setup - starting...");
+  init_display();
   
   // 0. configure hardware
-  //    disable ESP builtin LED
-  //    but not all ESP boards have this variable defined, so I should check the existance of `LED_BUILTIN`.
-  #ifdef LED_BUILTIN
-    // disable ESP32 Devkit-C built-in LED
-    pinMode(LED_BUILTIN, OUTPUT);
-    digitalWrite(LED_BUILTIN, LOW);
-  #endif
-  // set time to Saturday 00:00:00am Jan 1 2021
-  setTime(0,0,0,1,1,25);
+  rgbLedWrite(BOARD_RGB_LED_PIN, 0, 0, 0); 
+  // set time to Saturday 00:00:00am Jan 1 2025
+  setTime(0, 0, 0, 1, 1, 25);
 
   // 1. prepare wifi_client
   //    If SSL is enabled, add root ca to wifi_client to be used for secure connections
@@ -256,6 +306,7 @@ void setup() {
     Serial.println("**********************************");
     return;
   }
+  feature_values_init(saved_features);
 
   // 8. init sensors
   init_sensors();
@@ -282,7 +333,8 @@ void loop() {
   if (!mqtt_client.connected()) {
     Serial.println("loop - mqtt connecting...");
     mqtt_connect(saved_device_uuid);
-    // starts alarms to read sensors values
+    publish_initial_values();
+    // starts alarms
     alarms_enable();
   }
 

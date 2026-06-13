@@ -90,7 +90,6 @@ target_link_libraries(test_mqtt_handler
 add_executable(test_display
   test_display.cpp
   ../display.cpp
-  ../feature_values.cpp
 )
 
 target_compile_definitions(test_display PRIVATE HOME_ANTHILL_TEST_OLED_DISPLAY)

@@ -26,6 +26,7 @@
 
 // build-in RGB LED
 #define BOARD_RGB_LED_PIN 38
+#define DISPLAY_BUTTON_PIN 42
 
 char mac_address[18];
 
@@ -35,34 +36,21 @@ bool get_feature_uuid_by_name(char *featureUuid, size_t max_len, const char *nam
 void feature_values_load_saved();
 void feature_values_init_saved_features();
 void record_command_values(uint8_t* payload, unsigned int length);
-void display_show_feature(const char* name);
-void command_display_start();
-void command_display_next();
 void read_temp_sensor_value();
 void send_online_status();
 void alarms_init();
 void alarm_temperature_enable();
 void alarm_online_enable();
 void alarm_online_disable();
-void alarm_command_display_enable();
-void alarm_command_display_disable();
 void alarms_disable();
+void outputs_all_off();
+void outputs_init();
 void init_sensors();
 JsonDocument buildFeatures();
 
 // alarms used to periodically read values from sensors
 AlarmID_t alarm_temp;
 AlarmID_t alarm_online;
-#if OLED_DISPLAY == true
-AlarmID_t alarm_command_display;
-extern size_t display_feature_index;
-#endif
-
-const size_t COMMAND_DISPLAY_QUEUE_MAX = 8;
-char command_display_queue[COMMAND_DISPLAY_QUEUE_MAX][FEATURE_VALUE_NAME_MAX_LEN];
-size_t command_display_len = 0;
-size_t command_display_index = 0;
-bool command_display_active = false;
 
 // device_uuid global variable
 char saved_device_uuid[37];
@@ -71,19 +59,28 @@ JsonDocument doc_features;
 JsonArray saved_features = doc_features.to<JsonArray>();
 
 // outputs
-#if defined(CONFIG_IDF_TARGET_ESP32S3)
-  #define HEAT 47
-  #define COLD 48
+#if defined(HOME_ANTHILL_TEST_OLED_DISPLAY)
+  #define HEAT 4
+  #define COLD 5
+  #define FAN 6
+  #define PUMP 7
+#elif defined(CONFIG_IDF_TARGET_ESP32S3)
+  #define HEAT 5
+  #define COLD 6
+  #define FAN 7
+  #define PUMP 15
 #elif defined(CONFIG_IDF_TARGET_ESP32S2)
-  #define HEAT 33
-  #define COLD 34
+  #define HEAT 5
+  #define COLD 6
+  #define FAN 7
+  #define PUMP 15
 #elif defined(CONFIG_IDF_TARGET_ESP32)
   // TODO: test this on a real older ESP32 model
-  #define HEAT 2
-  #define COLD 15
+  #define HEAT 25
+  #define COLD 26
+  #define FAN 27
+  #define PUMP 32
 #endif
-#define FAN 35
-#define PUMP 36
 
 // ---------------------------------------------------------------------------
 // Connectivity state machine — runs one step per loop() iteration so that
@@ -154,6 +151,7 @@ void mqtt_callback(char *topic, uint8_t *payload, unsigned int length) {
   set_configuration(saved_device_uuid, mac_address, saved_features, payload,
                     length);
   record_command_values(payload, length);
+  display_show_message("Command", "Received");
 }
 
 void feature_values_load_saved() {
@@ -189,28 +187,6 @@ void feature_values_init_saved_features() {
   feature_values_load_saved();
 }
 
-void display_show_feature(const char* name) {
-#if OLED_DISPLAY == true
-  if (name == nullptr) {
-    return;
-  }
-
-  FeatureValue value = {};
-  for (size_t i = 0; i < feature_values_count(); i++) {
-    if (!feature_values_get(i, &value)) {
-      continue;
-    }
-    if (strcmp(value.name, name) == 0 && value.has_value) {
-      display_feature_index = i;
-      update_display();
-      return;
-    }
-  }
-#else
-  (void)name;
-#endif
-}
-
 void record_command_values(uint8_t* payload, unsigned int length) {
   JsonDocument doc;
   DeserializationError error = deserializeJson(doc, payload, length);
@@ -224,11 +200,6 @@ void record_command_values(uint8_t* payload, unsigned int length) {
   if (command_values.isNull()) {
     return;
   }
-
-  command_display_len = 0;
-  command_display_index = 0;
-  command_display_active = false;
-  alarm_command_display_disable();
 
   for (JsonObject command_value : command_values) {
     const char* feature_name = command_value["featureName"];
@@ -244,50 +215,8 @@ void record_command_values(uint8_t* payload, unsigned int length) {
       continue;
     }
 
-    if (feature_values_set(feature_name, value.as<float>())) {
-      if (command_display_len < COMMAND_DISPLAY_QUEUE_MAX) {
-        strncpy(command_display_queue[command_display_len], feature_name,
-                FEATURE_VALUE_NAME_MAX_LEN - 1);
-        command_display_queue[command_display_len][FEATURE_VALUE_NAME_MAX_LEN - 1] = '\0';
-        command_display_len++;
-      }
-    }
+    feature_values_set(feature_name, value.as<float>());
   }
-
-  command_display_start();
-}
-
-void command_display_start() {
-#if OLED_DISPLAY == true
-  if (command_display_len == 0) {
-    return;
-  }
-
-  command_display_active = true;
-  command_display_index = 0;
-  display_show_feature(command_display_queue[command_display_index]);
-  command_display_index++;
-  alarm_command_display_enable();
-#endif
-}
-
-void command_display_next() {
-#if OLED_DISPLAY == true
-  if (!command_display_active) {
-    alarm_command_display_disable();
-    return;
-  }
-
-  if (command_display_index < command_display_len) {
-    display_show_feature(command_display_queue[command_display_index]);
-    command_display_index++;
-    return;
-  }
-
-  alarm_command_display_disable();
-  command_display_active = false;
-  display_show_feature("temperature");
-#endif
 }
 
 JsonDocument buildFeatures() {
@@ -349,9 +278,7 @@ void read_temp_sensor_value() {
     Serial.println("read_temp_sensor_value - error reading temperature!");
   } else {
     Serial.printf("read_temp_sensor_value - temperature: %.2f °C\n", temp);
-    if (feature_values_set("temperature", temp) && !command_display_active) {
-      display_show_feature("temperature");
-    }
+    feature_values_set("temperature", temp);
 
     if (mqtt_client.connected()) {
       const char *feature_name = "temperature";
@@ -385,16 +312,11 @@ void read_temp_sensor_value() {
     } else if (temp < (setpoint - tolerance)) {
       Serial.printf("read_temp_sensor_value - it's too cold => %.2f < %.2f\n",
                     temp, setpoint - tolerance);
+      outputs_all_off();
       digitalWrite(HEAT, HIGH);
-      digitalWrite(COLD, LOW);
-      digitalWrite(PUMP, LOW);
-      digitalWrite(FAN, LOW);
     } else {
       Serial.println("read_temp_sensor_value - temp in range");
-      digitalWrite(HEAT, LOW);
-      digitalWrite(COLD, LOW);
-      digitalWrite(PUMP, LOW);
-      digitalWrite(FAN, LOW);
+      outputs_all_off();
     }
   }
 }
@@ -426,10 +348,6 @@ void alarms_init() {
   Alarm.disable(alarm_temp);
   alarm_online = Alarm.timerRepeat(60, send_online_status);
   Alarm.disable(alarm_online);
-#if OLED_DISPLAY == true
-  alarm_command_display = Alarm.timerRepeat(1, command_display_next);
-  Alarm.disable(alarm_command_display);
-#endif
 }
 
 void alarm_temperature_enable() {
@@ -444,24 +362,24 @@ void alarm_online_disable() {
   Alarm.disable(alarm_online);
 }
 
-void alarm_command_display_enable() {
-#if OLED_DISPLAY == true
-  Alarm.enable(alarm_command_display);
-#endif
-}
-
-void alarm_command_display_disable() {
-#if OLED_DISPLAY == true
-  Alarm.disable(alarm_command_display);
-#endif
-}
-
 void alarms_disable() {
   Alarm.disable(alarm_temp);
   Alarm.disable(alarm_online);
-#if OLED_DISPLAY == true
-  Alarm.disable(alarm_command_display);
-#endif
+}
+
+void outputs_all_off() {
+  digitalWrite(HEAT, LOW);
+  digitalWrite(COLD, LOW);
+  digitalWrite(PUMP, LOW);
+  digitalWrite(FAN, LOW);
+}
+
+void outputs_init() {
+  pinMode(HEAT, OUTPUT);
+  pinMode(COLD, OUTPUT);
+  pinMode(FAN, OUTPUT);
+  pinMode(PUMP, OUTPUT);
+  outputs_all_off();
 }
 
 void init_sensors() {
@@ -485,7 +403,7 @@ void setup() {
 
   // 2. init display
   Serial.println("setup - init display");
-  init_display();
+  init_display(DISPLAY_BUTTON_PIN);
 
   // Load any persisted feature definitions so offline temperature reads can
   // still use the same display path as received commands.
@@ -498,10 +416,7 @@ void setup() {
   alarms_init();
 
   // 4. configure output GPIOs
-  pinMode(HEAT, OUTPUT);
-  pinMode(COLD, OUTPUT);
-  pinMode(FAN, OUTPUT);
-  pinMode(PUMP, OUTPUT);
+  outputs_init();
 
   // 5. enable alarms — thermostat is OPERATIONAL offline
   //    Temperature reading + hysteretic control will fire every 10s via
@@ -524,6 +439,8 @@ void setup() {
   // 8. kick off WiFi connection — non-blocking; loop() drives the state machine
   Serial.println("setup - starting WiFi (non-blocking, state machine continues "
                  "in loop)...");
+  display_set_connectivity_status(false, false);
+  update_display();
   wifi_start_connect();
   // conn_state is already CONN_WIFI_WAITING (default)
 }
@@ -539,6 +456,8 @@ void handle_connectivity() {
 
   case CONN_WIFI_WAITING:
     if (wifi_get_status() == WL_CONNECTED) {
+      display_set_connectivity_status(true, false);
+      display_show_message("WiFi status", "Online");
       wifi_populate_mac(mac_address);
       wifi_sync_time();
       conn_attempts = 0;
@@ -578,6 +497,8 @@ void handle_connectivity() {
 
   case CONN_REGISTERING:
     if (wifi_get_status() != WL_CONNECTED) {
+      display_set_connectivity_status(false, false);
+      update_display();
       Serial.println("handle_connectivity - WiFi lost during registration, "
                      "restarting WiFi");
       conn_attempts = 0;
@@ -642,6 +563,8 @@ void handle_connectivity() {
 
   case CONN_MQTT_TRYING:
     if (wifi_get_status() != WL_CONNECTED) {
+      display_set_connectivity_status(false, false);
+      update_display();
       Serial.println("handle_connectivity - WiFi lost during MQTT connect, "
                      "restarting WiFi");
       conn_attempts = 0;
@@ -654,8 +577,11 @@ void handle_connectivity() {
 
     Serial.printf("handle_connectivity - MQTT attempt %d/%d\n",
                   conn_attempts + 1, CONN_MAX_MQTT_ATTEMPTS);
+    display_set_connectivity_status(true, false);
     if (mqtt_try_connect_once(saved_device_uuid)) {
       Serial.println("handle_connectivity - MQTT connected, going online");
+      display_set_connectivity_status(true, true);
+      display_show_message("MQTT status", "Online");
       conn_attempts = 0;
       conn_next_attempt_ms = 0;
       alarm_online_enable();
@@ -679,12 +605,16 @@ void handle_connectivity() {
   case CONN_ONLINE:
     if (wifi_get_status() != WL_CONNECTED) {
       Serial.println("handle_connectivity - WiFi dropped, reconnecting...");
+      display_set_connectivity_status(false, false);
+      update_display();
       alarm_online_disable();
       conn_attempts = 0;
       wifi_start_connect();
       conn_state = CONN_WIFI_WAITING;
     } else if (!mqtt_client.connected()) {
       Serial.println("handle_connectivity - MQTT dropped, reconnecting...");
+      display_set_connectivity_status(true, false);
+      update_display();
       alarm_online_disable();
       conn_attempts = 0;
       conn_next_attempt_ms = 0;
@@ -716,9 +646,12 @@ void loop() {
     if (!mqtt_client.loop()) {
       Serial.println("loop - mqtt_client.loop() returned false, forcing disconnect to trigger reconnect");
       mqtt_client.disconnect();
+      display_set_connectivity_status(wifi_get_status() == WL_CONNECTED, false);
+      update_display();
       alarm_online_disable();
     }
   }
 
+  update_display();
   Alarm.delay(100);
 }

@@ -180,6 +180,9 @@ float temp_get_temperature()  { return g_temp; }
 // --- display (no-op; update_display calls are counted) ----------------------
 
 size_t display_feature_index = 0;
+static int g_display_message_calls = 0;
+static std::string g_last_display_message_title;
+static std::string g_last_display_message_detail;
 
 struct UpdateDisplayCapture {
   std::string last_name;
@@ -193,7 +196,7 @@ struct UpdateDisplayCapture {
   static void reset() { instance() = UpdateDisplayCapture{}; }
 };
 
-void init_display()            {}
+void init_display(uint8_t)     {}
 void update_display() {
   auto& values = FeatureValuesCapture::instance().values;
   if (display_feature_index < values.size()) {
@@ -203,6 +206,16 @@ void update_display() {
   }
   UpdateDisplayCapture::instance().call_count++;
 }
+void display_force_update() {
+  update_display();
+}
+void display_show_message(const char* title, const char* detail) {
+  g_display_message_calls++;
+  g_last_display_message_title = title == nullptr ? "" : title;
+  g_last_display_message_detail = detail == nullptr ? "" : detail;
+}
+void display_set_connectivity_status(bool, bool) {}
+void display_sleep_for(unsigned long) {}
 
 // --- controller (controllable setpoint/tolerance; set_configuration captured) ---
 
@@ -242,13 +255,12 @@ bool         get_feature_uuid_by_name(char* featureUuid, size_t max_len, const c
 JsonDocument buildFeatures();
 void         read_temp_sensor_value();
 void         send_online_status();
-void         command_display_next();
 void         alarms_init();
 void         alarm_temperature_enable();
 void         alarm_online_enable();
 void         alarm_online_disable();
-void         alarm_command_display_enable();
-void         alarm_command_display_disable();
+void         outputs_init();
+void         outputs_all_off();
 
 // Forward-declare mqtt_callback (defined in thermostat.ino, no header).
 void mqtt_callback(char* topic, uint8_t* payload, unsigned int length);
@@ -277,17 +289,15 @@ extern JsonArray    saved_features;
 extern char         saved_device_uuid[37];
 extern AlarmID_t    alarm_temp;
 extern AlarmID_t    alarm_online;
-extern AlarmID_t    alarm_command_display;
-extern bool         command_display_active;
 
 // =============================================================================
 // Constants — pin numbers matching thermostat.ino #defines
 // =============================================================================
 
-static constexpr uint8_t PIN_HEAT = 33;
-static constexpr uint8_t PIN_COLD = 34;
-static constexpr uint8_t PIN_FAN  = 35;
-static constexpr uint8_t PIN_PUMP = 36;
+static constexpr uint8_t PIN_HEAT = 4;
+static constexpr uint8_t PIN_COLD = 5;
+static constexpr uint8_t PIN_FAN  = 6;
+static constexpr uint8_t PIN_PUMP = 7;
 
 // =============================================================================
 // Fixture
@@ -321,8 +331,10 @@ protected:
     conn_attempts = 0;
     conn_next_attempt_ms = 0;
     conn_cooldown_until_ms = 0;
-    command_display_active = false;
     display_feature_index = 0;
+    g_display_message_calls = 0;
+    g_last_display_message_title.clear();
+    g_last_display_message_detail.clear();
     mock_set_millis(0);
   }
 
@@ -332,6 +344,15 @@ protected:
     f["uuid"] = uuid;
   }
 };
+
+TEST_F(MainInoTest, OutputsInitStartsAllOutputsOff) {
+  outputs_init();
+
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], static_cast<uint8_t>(LOW));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], static_cast<uint8_t>(LOW));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], static_cast<uint8_t>(LOW));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  static_cast<uint8_t>(LOW));
+}
 
 // =============================================================================
 // get_feature_uuid_by_name
@@ -488,13 +509,12 @@ TEST_F(MainInoTest, ReadTempSkipsEverythingWhenNan) {
 // read_temp_sensor_value — display update
 // =============================================================================
 
-TEST_F(MainInoTest, ReadTempCallsUpdateDisplayWithCorrectValue) {
+TEST_F(MainInoTest, ReadTempCachesDisplayValueWithoutForcingRefresh) {
   g_temp = 21.5f;
 
   read_temp_sensor_value();
 
-  EXPECT_EQ(UpdateDisplayCapture::instance().call_count, 1);
-  EXPECT_EQ(UpdateDisplayCapture::instance().last_name, "temperature");
+  EXPECT_EQ(UpdateDisplayCapture::instance().call_count, 0);
   ASSERT_EQ(FeatureValuesCapture::instance().values.size(), 1u);
   EXPECT_EQ(FeatureValuesCapture::instance().values[0].type, "temperature");
   EXPECT_FLOAT_EQ(FeatureValuesCapture::instance().values[0].value, 21.5f);
@@ -655,6 +675,8 @@ TEST_F(MainInoTest, ReadTempExactlyAtUpperBoundIsInRange) {
   // Falls into the idle (else) branch.
   EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], static_cast<uint8_t>(LOW));
   EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], static_cast<uint8_t>(LOW));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], static_cast<uint8_t>(LOW));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  static_cast<uint8_t>(LOW));
 }
 
 TEST_F(MainInoTest, ReadTempExactlyAtLowerBoundIsInRange) {
@@ -667,6 +689,8 @@ TEST_F(MainInoTest, ReadTempExactlyAtLowerBoundIsInRange) {
 
   EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], static_cast<uint8_t>(LOW));
   EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], static_cast<uint8_t>(LOW));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], static_cast<uint8_t>(LOW));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  static_cast<uint8_t>(LOW));
 }
 
 // =============================================================================
@@ -688,10 +712,12 @@ TEST_F(MainInoTest, MqttCallbackDelegatesToSetConfiguration) {
   ASSERT_EQ(FeatureValuesCapture::instance().values.size(), 1u);
   EXPECT_EQ(FeatureValuesCapture::instance().values[0].type, "setpoint");
   EXPECT_FLOAT_EQ(FeatureValuesCapture::instance().values[0].value, 22.0f);
-  EXPECT_EQ(UpdateDisplayCapture::instance().last_name, "setpoint");
+  EXPECT_EQ(g_display_message_calls, 1);
+  EXPECT_EQ(g_last_display_message_title, "Command");
+  EXPECT_EQ(g_last_display_message_detail, "Received");
 }
 
-TEST_F(MainInoTest, CommandDisplayShowsEachValueThenStopsWhenTemperatureIsNotCached) {
+TEST_F(MainInoTest, MqttCallbackRecordsCommandValuesAndShowsCommandMessage) {
   const char* topic   = "devices/dev-uuid/values";
   const char* payload = R"([{"featureName":"setpoint","value":22},{"featureName":"tolerance","value":1.5}])";
   auto*        p      = reinterpret_cast<uint8_t*>(const_cast<char*>(payload));
@@ -700,21 +726,17 @@ TEST_F(MainInoTest, CommandDisplayShowsEachValueThenStopsWhenTemperatureIsNotCac
   mqtt_callback(const_cast<char*>(topic), p,
                 static_cast<unsigned int>(strlen(payload)));
 
-  ASSERT_EQ(UpdateDisplayCapture::instance().last_name, "setpoint");
-  EXPECT_TRUE(command_display_active);
-  EXPECT_TRUE(Alarm.isEnabled(alarm_command_display));
-
-  command_display_next();
-  EXPECT_EQ(UpdateDisplayCapture::instance().last_name, "tolerance");
-  EXPECT_TRUE(command_display_active);
-
-  command_display_next();
-  EXPECT_EQ(UpdateDisplayCapture::instance().last_name, "tolerance");
-  EXPECT_FALSE(command_display_active);
-  EXPECT_FALSE(Alarm.isEnabled(alarm_command_display));
+  ASSERT_EQ(FeatureValuesCapture::instance().values.size(), 2u);
+  EXPECT_EQ(FeatureValuesCapture::instance().values[0].type, "setpoint");
+  EXPECT_FLOAT_EQ(FeatureValuesCapture::instance().values[0].value, 22.0f);
+  EXPECT_EQ(FeatureValuesCapture::instance().values[1].type, "tolerance");
+  EXPECT_FLOAT_EQ(FeatureValuesCapture::instance().values[1].value, 1.5f);
+  EXPECT_EQ(g_display_message_calls, 1);
+  EXPECT_EQ(g_last_display_message_title, "Command");
+  EXPECT_EQ(g_last_display_message_detail, "Received");
 }
 
-TEST_F(MainInoTest, TemperatureReadDoesNotOverrideActiveCommandDisplay) {
+TEST_F(MainInoTest, TemperatureReadUpdatesCacheAfterCommandMessage) {
   const char* topic   = "devices/dev-uuid/values";
   const char* payload = R"([{"featureName":"setpoint","value":22},{"featureName":"tolerance","value":1.5}])";
   auto*        p      = reinterpret_cast<uint8_t*>(const_cast<char*>(payload));
@@ -722,18 +744,16 @@ TEST_F(MainInoTest, TemperatureReadDoesNotOverrideActiveCommandDisplay) {
   alarms_init();
   mqtt_callback(const_cast<char*>(topic), p,
                 static_cast<unsigned int>(strlen(payload)));
-  ASSERT_EQ(UpdateDisplayCapture::instance().last_name, "setpoint");
+  ASSERT_EQ(g_display_message_calls, 1);
 
   g_temp = 19.25f;
   read_temp_sensor_value();
 
-  EXPECT_EQ(UpdateDisplayCapture::instance().last_name, "setpoint");
-
-  command_display_next();
-  EXPECT_EQ(UpdateDisplayCapture::instance().last_name, "tolerance");
-
-  command_display_next();
-  EXPECT_EQ(UpdateDisplayCapture::instance().last_name, "temperature");
+  ASSERT_EQ(FeatureValuesCapture::instance().values.size(), 3u);
+  EXPECT_EQ(FeatureValuesCapture::instance().values[0].type, "setpoint");
+  EXPECT_EQ(FeatureValuesCapture::instance().values[1].type, "tolerance");
+  EXPECT_EQ(FeatureValuesCapture::instance().values[2].type, "temperature");
+  EXPECT_FLOAT_EQ(FeatureValuesCapture::instance().values[2].value, 19.25f);
 }
 
 TEST_F(MainInoTest, WifiConnectedSyncsTimeBeforeRegistrationOrMqtt) {

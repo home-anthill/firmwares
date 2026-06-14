@@ -1,6 +1,9 @@
 // include Arduino library to use Arduino function in cpp files
 #include <Arduino.h>
 
+#include <math.h>
+#include <string.h>
+
 // Thermocouple MCP9600
 // include specific libraries:
 // - OneWire: https://github.com/PaulStoffregen/OneWire
@@ -8,7 +11,6 @@
 #include <Adafruit_I2CDevice.h>
 #include <Adafruit_I2CRegister.h>
 #include "Adafruit_MCP9600.h"
-#include <string.h>
 
 #include "secrets.h"
 
@@ -23,7 +25,17 @@ Adafruit_MCP9600 mcp;
 /* Set and print ambient resolution */
 Ambient_Resolution ambientRes = RES_ZERO_POINT_0625;
 
-static MCP9600_ThermocoupleType configured_thermocouple_type() {
+// Thermocouple readings can occasionally jump because the signal is tiny and
+// easy to disturb with motor/relay noise. Keep a short history of accepted
+// values and reject sudden outliers, returning the last valid value instead.
+const size_t TEMP_VALID_HISTORY_SIZE = 10;
+const float TEMP_VALID_MAX_DEVIATION_PERCENT = 8.0f;
+float temp_valid_history[TEMP_VALID_HISTORY_SIZE] = {};
+size_t temp_valid_history_count = 0;
+size_t temp_valid_history_index = 0;
+float last_temp_valid_value = NAN;
+
+static auto configured_thermocouple_type() {
   if (strcmp(THERMOCOUPLE_TYPE, "K") == 0) return MCP9600_TYPE_K;
   if (strcmp(THERMOCOUPLE_TYPE, "J") == 0) return MCP9600_TYPE_J;
   if (strcmp(THERMOCOUPLE_TYPE, "T") == 0) return MCP9600_TYPE_T;
@@ -37,8 +49,55 @@ static MCP9600_ThermocoupleType configured_thermocouple_type() {
   return MCP9600_TYPE_K;
 }
 
+static float get_temp_history_avg() {
+  if (temp_valid_history_count == 0) {
+    return NAN;
+  }
+
+  float total = 0.0f;
+  for (size_t i = 0; i < temp_valid_history_count; i++) {
+    total += temp_valid_history[i];
+  }
+  return total / temp_valid_history_count;
+}
+
+static void set_temp_valid_value(float value) {
+  temp_valid_history[temp_valid_history_index] = value;
+  temp_valid_history_index = (temp_valid_history_index + 1) % TEMP_VALID_HISTORY_SIZE;
+  if (temp_valid_history_count < TEMP_VALID_HISTORY_SIZE) {
+    temp_valid_history_count++;
+  }
+  last_temp_valid_value = value;
+}
+
+static void reset_valid_temp_history() {
+  for (size_t i = 0; i < TEMP_VALID_HISTORY_SIZE; i++) {
+    temp_valid_history[i] = 0.0f;
+  }
+  temp_valid_history_count = 0;
+  temp_valid_history_index = 0;
+  last_temp_valid_value = NAN;
+}
+
+static bool is_temp_reading_is_accettable(float value) {
+  if (isnan(value)) {
+    return false;
+  }
+
+  // Bootstrap: without accepted history there is no trustworthy avg yet.
+  if (temp_valid_history_count == 0 || isnan(last_temp_valid_value)) {
+    return true;
+  }
+
+  float avg = get_temp_history_avg();
+  float max_delta = fabs(avg) * (TEMP_VALID_MAX_DEVIATION_PERCENT / 100.0f);
+
+  return fabs(value - avg) <= max_delta;
+}
+
 void temp_init_sensor() {
   Serial.println("temp_init_sensor - called");
+  reset_valid_temp_history();
   // init display
   Wire.setPins(I2C_SDA, I2C_SCL);
 
@@ -108,5 +167,21 @@ float temp_get_temperature() {
   Serial.print("Cold Junction: "); Serial.println(ambient);
   Serial.print("ADC: "); Serial.print(adc); Serial.println(" uV");
 
-  return thermocouple;
+  // Use the raw value only when it agrees with the accepted recent history.
+  // If something external produces a sudden spike, keep controlling with the last
+  // valid value so one or more bad reads do not flip the GPIO outputs.
+  if (is_temp_reading_is_accettable(thermocouple)) {
+    set_temp_valid_value(thermocouple);
+    return thermocouple;
+  }
+
+  Serial.print("temp_get_temperature - rejected bad thermocouple reading: ");
+  Serial.print(thermocouple);
+  Serial.print(" C; accepted history average: ");
+  Serial.print(get_temp_history_avg());
+  Serial.print(" C; returning previous valid value: ");
+  Serial.print(last_temp_valid_value);
+  Serial.println(" C");
+
+  return last_temp_valid_value;
 }

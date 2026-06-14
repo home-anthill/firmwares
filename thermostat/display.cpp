@@ -55,6 +55,7 @@ bool display_has_rendered = false;
 unsigned long display_last_render_ms = 0;
 unsigned long display_keep_on_until_ms = 0;
 unsigned long display_force_off_until_ms = 0;
+unsigned long display_connectivity_notice_until_ms = 0;
 uint8_t display_button_pin = 255;
 int display_button_last_read = HIGH;
 unsigned long display_button_last_change_ms = 0;
@@ -67,6 +68,7 @@ bool display_button_enabled_for_test = DISPLAY_BUTTON_ENABLED == true;
 
 const unsigned long DISPLAY_PERSISTENCE_MS = 1500;
 const unsigned long DISPLAY_AUTO_OFF_MS = 30000;
+const unsigned long DISPLAY_CONNECTIVITY_NOTICE_MS = 10000;
 const unsigned long BUTTON_LONG_PRESS_MS = 10000;
 const unsigned long BUTTON_DEBOUNCE_MS = 50;
 
@@ -261,6 +263,14 @@ static void render_default_display_slot() {
   render_next_display_slot();
 }
 
+static void render_connectivity_fallback_slot() {
+  if (render_display_slot_by_name("temperature")) {
+    return;
+  }
+
+  render_next_display_slot();
+}
+
 static bool refresh_current_display_slot() {
   if (!showDisplay ||
       !display_powered ||
@@ -354,6 +364,7 @@ void init_display(uint8_t button_pin) {
   display_button_pressed_at_ms = 0;
   display_keep_on_until_ms = display_button_enabled() ? millis() + DISPLAY_AUTO_OFF_MS : 0;
   display_force_off_until_ms = 0;
+  display_connectivity_notice_until_ms = 0;
   display_powered = true;
   display_has_rendered = false;
   display_current_valid = false;
@@ -404,12 +415,19 @@ void display_show_message(const char* title, const char* detail) {
 }
 
 void display_set_connectivity_status(bool wifi_connected, bool mqtt_connected) {
-  bool had_error = display_has_connectivity_error();
+  bool status_changed = display_wifi_connected != wifi_connected ||
+      display_mqtt_connected != mqtt_connected;
   display_wifi_connected = wifi_connected;
   display_mqtt_connected = mqtt_connected;
-  if (had_error != display_has_connectivity_error()) {
+  bool has_error = display_has_connectivity_error();
+  if (status_changed) {
     display_has_rendered = false;
     display_current_valid = false;
+  }
+  if (!has_error) {
+    display_connectivity_notice_until_ms = 0;
+  } else if (status_changed) {
+    display_connectivity_notice_until_ms = millis() + DISPLAY_CONNECTIVITY_NOTICE_MS;
   }
 }
 
@@ -442,10 +460,18 @@ void update_display() {
   if (display_has_connectivity_error()) {
     display_force_off_until_ms = 0;
     display_power_on();
-    if (display_current_error && display_has_rendered) {
+    if (display_deadline_active(display_connectivity_notice_until_ms)) {
+      if (display_current_error && display_has_rendered) {
+        return;
+      }
+      render_connectivity_error();
       return;
     }
-    render_connectivity_error();
+    if (display_current_error || display_current_message || !display_current_valid) {
+      render_connectivity_fallback_slot();
+    } else {
+      refresh_current_display_slot();
+    }
     return;
   }
 
@@ -500,12 +526,17 @@ void display_force_update() {
     display_keep_on_until_ms = millis() + DISPLAY_AUTO_OFF_MS;
   }
   display_power_on();
-  if (display_has_connectivity_error()) {
+  if (display_has_connectivity_error() &&
+      display_deadline_active(display_connectivity_notice_until_ms)) {
     render_connectivity_error();
     return;
   }
 
-  render_default_display_slot();
+  if (display_has_connectivity_error()) {
+    render_connectivity_fallback_slot();
+  } else {
+    render_default_display_slot();
+  }
 }
 
 #endif

@@ -51,6 +51,7 @@ extern bool display_has_rendered;
 extern unsigned long display_last_render_ms;
 extern unsigned long display_keep_on_until_ms;
 extern unsigned long display_force_off_until_ms;
+extern unsigned long display_connectivity_notice_until_ms;
 extern uint8_t display_button_pin;
 extern int display_button_last_read;
 extern unsigned long display_button_last_change_ms;
@@ -80,6 +81,7 @@ protected:
     display_last_render_ms = 0;
     display_keep_on_until_ms = 0;
     display_force_off_until_ms = 0;
+    display_connectivity_notice_until_ms = 0;
     display_button_pin = 255;
     display_button_last_read = HIGH;
     display_button_last_change_ms = 0;
@@ -315,21 +317,49 @@ TEST_F(DisplayTest, StartupAutoPowersOffDisplayAfterThirtySeconds) {
   EXPECT_EQ(DisplayMockState::instance().commands[0], SSD1306_DISPLAYOFF);
 }
 
-TEST_F(DisplayTest, ConnectivityErrorPowersDisplayAndStaysOnPastAutoOff) {
+TEST_F(DisplayTest, ConnectivityErrorShowsNoticeThenTemperatureAndStaysOn) {
   init_display(kDisplayButtonPin);
+  addFeatureValue(0, "temperature", "°C", 23.5f, true);
   display_set_connectivity_status(false, false);
   clearDisplayMockCalls();
 
-  mock_advance_millis(30000);
-  update_display();
-  mock_advance_millis(30000);
   update_display();
 
   EXPECT_TRUE(display_powered);
   ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "WiFi status");
   EXPECT_EQ(DisplayMockState::instance().prints[1], "Offline");
+
+  clearDisplayMockCalls();
+  mock_advance_millis(9999);
+  update_display();
+  EXPECT_TRUE(DisplayMockState::instance().prints.empty());
+
+  mock_advance_millis(1);
+  update_display();
+
+  EXPECT_TRUE(display_powered);
+  ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
+  EXPECT_EQ(DisplayMockState::instance().prints[0], "temperature");
+  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.5 \xF8""C"));
   EXPECT_TRUE(DisplayMockState::instance().commands.empty());
+}
+
+TEST_F(DisplayTest, ConnectivityNoticeDoesNotExtendForSameErrorStatus) {
+  init_display(kDisplayButtonPin);
+  addFeatureValue(0, "temperature", "°C", 23.5f, true);
+  display_set_connectivity_status(true, false);
+  update_display();
+  clearDisplayMockCalls();
+
+  mock_advance_millis(5000);
+  display_set_connectivity_status(true, false);
+  mock_advance_millis(5000);
+  update_display();
+
+  ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
+  EXPECT_EQ(DisplayMockState::instance().prints[0], "temperature");
+  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.5 \xF8""C"));
 }
 
 TEST_F(DisplayTest, ConnectivityErrorOverridesCommandSleep) {
@@ -423,22 +453,24 @@ TEST_F(DisplayTest, SinglePressSkipsConnectivityErrorAndShowsFeatureValue) {
   EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.5 \xF8""C"));
 }
 
-TEST_F(DisplayTest, ConnectivityErrorReturnsAfterFeatureInactivity) {
+TEST_F(DisplayTest, ConnectivityErrorDoesNotReturnAfterNoticeExpires) {
   init_display(kDisplayButtonPin);
   addFeatureValue(0, "temperature", "°C", 23.5f, true);
   display_set_connectivity_status(false, false);
   update_display();
+
+  mock_advance_millis(10000);
+  update_display();
   clearDisplayMockCalls();
 
-  pressButtonFor(100);
   mock_advance_millis(30000);
+  g_feature_values[0].value = 23.6f;
   update_display();
 
   EXPECT_TRUE(display_powered);
-  ASSERT_GE(DisplayMockState::instance().prints.size(), 4u);
+  ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "temperature");
-  EXPECT_EQ(DisplayMockState::instance().prints[2], "WiFi status");
-  EXPECT_EQ(DisplayMockState::instance().prints[3], "Offline");
+  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.6 \xF8""C"));
 }
 
 TEST_F(DisplayTest, DisabledButtonKeepsDisplayOnPastStartupTimeout) {

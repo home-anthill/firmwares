@@ -306,7 +306,7 @@ void read_temp_sensor_value() {
       Serial.printf("read_temp_sensor_value - it's too hot => %.2f > %.2f\n",
                     temp, setpoint + tolerance);
       digitalWrite(HEAT, LOW);
-      digitalWrite(COLD, HIGH);
+      digitalWrite(COLD, LOW);
       digitalWrite(PUMP, HIGH);
       digitalWrite(FAN, HIGH);
     } else if (temp < (setpoint - tolerance)) {
@@ -369,7 +369,7 @@ void alarms_disable() {
 
 void outputs_all_off() {
   digitalWrite(HEAT, LOW);
-  digitalWrite(COLD, LOW);
+  digitalWrite(COLD, HIGH);
   digitalWrite(PUMP, LOW);
   digitalWrite(FAN, LOW);
 }

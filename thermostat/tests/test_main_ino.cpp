@@ -17,6 +17,22 @@
 // secrets.h must come before any firmware header that uses SSL/MODEL/API_TOKEN.
 #include "secrets.h"
 
+#ifndef HOT_ACTIVE_LOW
+#define HOT_ACTIVE_LOW false
+#endif
+
+#ifndef COLD_ACTIVE_LOW
+#define COLD_ACTIVE_LOW true
+#endif
+
+#ifndef FAN_ACTIVE_LOW
+#define FAN_ACTIVE_LOW false
+#endif
+
+#ifndef PUMP_ACTIVE_LOW
+#define PUMP_ACTIVE_LOW false
+#endif
+
 // Headers from the firmware (needed for function signatures only).
 #include "wifi_handler.h"
 #include "mqtt_handler.h"
@@ -299,6 +315,19 @@ static constexpr uint8_t PIN_COLD = 5;
 static constexpr uint8_t PIN_FAN  = 6;
 static constexpr uint8_t PIN_PUMP = 7;
 
+static constexpr uint8_t outputLevel(bool active_low, bool active) {
+  return active ? (active_low ? LOW : HIGH) : (active_low ? HIGH : LOW);
+}
+
+static constexpr uint8_t HEAT_ON = outputLevel(HOT_ACTIVE_LOW, true);
+static constexpr uint8_t HEAT_OFF = outputLevel(HOT_ACTIVE_LOW, false);
+static constexpr uint8_t COLD_ON = outputLevel(COLD_ACTIVE_LOW, true);
+static constexpr uint8_t COLD_OFF = outputLevel(COLD_ACTIVE_LOW, false);
+static constexpr uint8_t FAN_ON = outputLevel(FAN_ACTIVE_LOW, true);
+static constexpr uint8_t FAN_OFF = outputLevel(FAN_ACTIVE_LOW, false);
+static constexpr uint8_t PUMP_ON = outputLevel(PUMP_ACTIVE_LOW, true);
+static constexpr uint8_t PUMP_OFF = outputLevel(PUMP_ACTIVE_LOW, false);
+
 // =============================================================================
 // Fixture
 // =============================================================================
@@ -348,10 +377,10 @@ protected:
 TEST_F(MainInoTest, OutputsInitStartsAllOutputsOff) {
   outputs_init();
 
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], static_cast<uint8_t>(LOW));
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], static_cast<uint8_t>(LOW));
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], static_cast<uint8_t>(LOW));
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  static_cast<uint8_t>(LOW));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  FAN_OFF);
 }
 
 // =============================================================================
@@ -630,10 +659,10 @@ TEST_F(MainInoTest, ReadTempTooHotActivatesCooling) {
 
   read_temp_sensor_value();
 
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], static_cast<uint8_t>(LOW));
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], static_cast<uint8_t>(HIGH));
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], static_cast<uint8_t>(HIGH));
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  static_cast<uint8_t>(HIGH));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_ON);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_ON);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  FAN_ON);
 }
 
 TEST_F(MainInoTest, ReadTempTooColdActivatesHeating) {
@@ -644,10 +673,10 @@ TEST_F(MainInoTest, ReadTempTooColdActivatesHeating) {
 
   read_temp_sensor_value();
 
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], static_cast<uint8_t>(HIGH));
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], static_cast<uint8_t>(LOW));
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], static_cast<uint8_t>(LOW));
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  static_cast<uint8_t>(LOW));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_ON);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  FAN_OFF);
 }
 
 TEST_F(MainInoTest, ReadTempInRangeTurnsAllOff) {
@@ -658,10 +687,10 @@ TEST_F(MainInoTest, ReadTempInRangeTurnsAllOff) {
 
   read_temp_sensor_value();
 
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], static_cast<uint8_t>(LOW));
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], static_cast<uint8_t>(LOW));
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], static_cast<uint8_t>(LOW));
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  static_cast<uint8_t>(LOW));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  FAN_OFF);
 }
 
 TEST_F(MainInoTest, ReadTempExactlyAtUpperBoundIsInRange) {
@@ -673,10 +702,10 @@ TEST_F(MainInoTest, ReadTempExactlyAtUpperBoundIsInRange) {
   read_temp_sensor_value();
 
   // Falls into the idle (else) branch.
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], static_cast<uint8_t>(LOW));
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], static_cast<uint8_t>(LOW));
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], static_cast<uint8_t>(LOW));
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  static_cast<uint8_t>(LOW));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  FAN_OFF);
 }
 
 TEST_F(MainInoTest, ReadTempExactlyAtLowerBoundIsInRange) {
@@ -687,10 +716,10 @@ TEST_F(MainInoTest, ReadTempExactlyAtLowerBoundIsInRange) {
 
   read_temp_sensor_value();
 
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], static_cast<uint8_t>(LOW));
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], static_cast<uint8_t>(LOW));
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], static_cast<uint8_t>(LOW));
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  static_cast<uint8_t>(LOW));
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  FAN_OFF);
 }
 
 // =============================================================================

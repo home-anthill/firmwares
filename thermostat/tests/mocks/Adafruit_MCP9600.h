@@ -59,6 +59,8 @@ struct TempSensorMockState {
   int32_t adc_value{0};
   bool    init_called{false};
   int     read_count{0};
+  int     set_thermocouple_type_count{0};
+  MCP9600_ThermocoupleType thermocouple_type{MCP9600_TYPE_K};
 
   static TempSensorMockState& instance() {
     static TempSensorMockState s;
@@ -85,10 +87,14 @@ public:
     return MCP9600_ADCRESOLUTION_18;
   }
 
-  void setThermocoupleType(MCP9600_ThermocoupleType /*t*/)  {}
+  void setThermocoupleType(MCP9600_ThermocoupleType t)  {
+    auto& state = TempSensorMockState::instance();
+    state.thermocouple_type = t;
+    state.set_thermocouple_type_count++;
+  }
 
   MCP9600_ThermocoupleType getThermocoupleType() {
-    return MCP9600_TYPE_K;
+    return TempSensorMockState::instance().thermocouple_type;
   }
 
   void    setFilterCoefficient(uint8_t /*coeff*/)           {}

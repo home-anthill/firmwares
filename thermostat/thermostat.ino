@@ -47,6 +47,11 @@ void outputs_all_off();
 void outputs_init();
 void init_sensors();
 JsonDocument buildFeatures();
+uint8_t output_level(bool active_low, bool active);
+void write_heat_output(bool active);
+void write_cold_output(bool active);
+void write_fan_output(bool active);
+void write_pump_output(bool active);
 
 // alarms used to periodically read values from sensors
 AlarmID_t alarm_temp;
@@ -80,6 +85,22 @@ JsonArray saved_features = doc_features.to<JsonArray>();
   #define COLD 26
   #define FAN 27
   #define PUMP 32
+#endif
+
+#ifndef HOT_ACTIVE_LOW
+#define HOT_ACTIVE_LOW false
+#endif
+
+#ifndef COLD_ACTIVE_LOW
+#define COLD_ACTIVE_LOW true
+#endif
+
+#ifndef FAN_ACTIVE_LOW
+#define FAN_ACTIVE_LOW false
+#endif
+
+#ifndef PUMP_ACTIVE_LOW
+#define PUMP_ACTIVE_LOW false
 #endif
 
 // ---------------------------------------------------------------------------
@@ -305,15 +326,15 @@ void read_temp_sensor_value() {
     if (temp > (setpoint + tolerance)) {
       Serial.printf("read_temp_sensor_value - it's too hot => %.2f > %.2f\n",
                     temp, setpoint + tolerance);
-      digitalWrite(HEAT, LOW);
-      digitalWrite(COLD, LOW);
-      digitalWrite(PUMP, HIGH);
-      digitalWrite(FAN, HIGH);
+      write_heat_output(false);
+      write_cold_output(true);
+      write_pump_output(true);
+      write_fan_output(true);
     } else if (temp < (setpoint - tolerance)) {
       Serial.printf("read_temp_sensor_value - it's too cold => %.2f < %.2f\n",
                     temp, setpoint - tolerance);
       outputs_all_off();
-      digitalWrite(HEAT, HIGH);
+      write_heat_output(true);
     } else {
       Serial.println("read_temp_sensor_value - temp in range");
       outputs_all_off();
@@ -367,11 +388,31 @@ void alarms_disable() {
   Alarm.disable(alarm_online);
 }
 
+uint8_t output_level(bool active_low, bool active) {
+  return active ? (active_low ? LOW : HIGH) : (active_low ? HIGH : LOW);
+}
+
+void write_heat_output(bool active) {
+  digitalWrite(HEAT, output_level(HOT_ACTIVE_LOW, active));
+}
+
+void write_cold_output(bool active) {
+  digitalWrite(COLD, output_level(COLD_ACTIVE_LOW, active));
+}
+
+void write_fan_output(bool active) {
+  digitalWrite(FAN, output_level(FAN_ACTIVE_LOW, active));
+}
+
+void write_pump_output(bool active) {
+  digitalWrite(PUMP, output_level(PUMP_ACTIVE_LOW, active));
+}
+
 void outputs_all_off() {
-  digitalWrite(HEAT, LOW);
-  digitalWrite(COLD, HIGH);
-  digitalWrite(PUMP, LOW);
-  digitalWrite(FAN, LOW);
+  write_heat_output(false);
+  write_cold_output(false);
+  write_pump_output(false);
+  write_fan_output(false);
 }
 
 void outputs_init() {

@@ -8,6 +8,13 @@
 #include <Adafruit_I2CDevice.h>
 #include <Adafruit_I2CRegister.h>
 #include "Adafruit_MCP9600.h"
+#include <string.h>
+
+#include "secrets.h"
+
+#ifndef THERMOCOUPLE_TYPE
+#define THERMOCOUPLE_TYPE "K"
+#endif
 
 #define I2C_ADDRESS (0x67)
 #define I2C_SDA 39
@@ -16,6 +23,19 @@ Adafruit_MCP9600 mcp;
 /* Set and print ambient resolution */
 Ambient_Resolution ambientRes = RES_ZERO_POINT_0625;
 
+static MCP9600_ThermocoupleType configured_thermocouple_type() {
+  if (strcmp(THERMOCOUPLE_TYPE, "K") == 0) return MCP9600_TYPE_K;
+  if (strcmp(THERMOCOUPLE_TYPE, "J") == 0) return MCP9600_TYPE_J;
+  if (strcmp(THERMOCOUPLE_TYPE, "T") == 0) return MCP9600_TYPE_T;
+  if (strcmp(THERMOCOUPLE_TYPE, "N") == 0) return MCP9600_TYPE_N;
+  if (strcmp(THERMOCOUPLE_TYPE, "S") == 0) return MCP9600_TYPE_S;
+  if (strcmp(THERMOCOUPLE_TYPE, "E") == 0) return MCP9600_TYPE_E;
+  if (strcmp(THERMOCOUPLE_TYPE, "B") == 0) return MCP9600_TYPE_B;
+  if (strcmp(THERMOCOUPLE_TYPE, "R") == 0) return MCP9600_TYPE_R;
+
+  Serial.printf("Unsupported THERMOCOUPLE_TYPE \"%s\", defaulting to K\n", THERMOCOUPLE_TYPE);
+  return MCP9600_TYPE_K;
+}
 
 void temp_init_sensor() {
   Serial.println("temp_init_sensor - called");
@@ -52,7 +72,7 @@ void temp_init_sensor() {
   }
   Serial.println(" bits");
 
-  mcp.setThermocoupleType(MCP9600_TYPE_T);
+  mcp.setThermocoupleType(configured_thermocouple_type());
   Serial.print("Thermocouple type set to ");
   switch (mcp.getThermocoupleType()) {
     case MCP9600_TYPE_K:  Serial.print("K"); break;

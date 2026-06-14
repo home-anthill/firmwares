@@ -147,8 +147,8 @@ static bool verify_command_signature(JsonObject featureValue) {
   return true;
 }
 
-static constexpr float DEFAULT_SETPOINT = 20.0f;
-static constexpr float DEFAULT_TOLERANCE = 0.0f;
+static constexpr float DEFAULT_SETPOINT = 25.0f;
+static constexpr float DEFAULT_TOLERANCE = 5.0f;
 
 float get_setpoint() {
   Serial.println("get_setpoint - called");

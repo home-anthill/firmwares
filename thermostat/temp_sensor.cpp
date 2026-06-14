@@ -52,7 +52,7 @@ void temp_init_sensor() {
   }
   Serial.println(" bits");
 
-  mcp.setThermocoupleType(MCP9600_TYPE_K);
+  mcp.setThermocoupleType(MCP9600_TYPE_T);
   Serial.print("Thermocouple type set to ");
   switch (mcp.getThermocoupleType()) {
     case MCP9600_TYPE_K:  Serial.print("K"); break;

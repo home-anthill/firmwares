@@ -52,6 +52,7 @@ void write_heat_output(bool active);
 void write_cold_output(bool active);
 void write_fan_output(bool active);
 void write_pump_output(bool active);
+bool fan_turn_off_delay_active();
 
 // alarms used to periodically read values from sensors
 AlarmID_t alarm_temp;
@@ -103,6 +104,10 @@ JsonArray saved_features = doc_features.to<JsonArray>();
 #define PUMP_ACTIVE_LOW false
 #endif
 
+#ifndef FAN_TURN_OFF_DELAY_MINUTES
+#define FAN_TURN_OFF_DELAY_MINUTES 0
+#endif
+
 // ---------------------------------------------------------------------------
 // Connectivity state machine — runs one step per loop() iteration so that
 // Alarm.delay() is always reached and the thermostat control loop never stalls.
@@ -132,6 +137,9 @@ unsigned long conn_next_attempt_ms = 0;
 
 // millis() timestamp: when the cooldown period ends (→ ESP.restart())
 unsigned long conn_cooldown_until_ms = 0;
+
+bool fan_requested_active = false;
+unsigned long fan_turn_off_at_ms = 0;
 
 // Give WiFi extra time on boot: poll every 2 s for up to ~90 s before the
 // device enters the long offline cooldown.
@@ -401,11 +409,48 @@ void write_cold_output(bool active) {
 }
 
 void write_fan_output(bool active) {
-  digitalWrite(FAN, output_level(FAN_ACTIVE_LOW, active));
+  const unsigned long fan_turn_off_delay_ms =
+      static_cast<unsigned long>(FAN_TURN_OFF_DELAY_MINUTES) * 60UL * 1000UL;
+
+  if (active) {
+    fan_requested_active = true;
+    fan_turn_off_at_ms = 0;
+    digitalWrite(FAN, output_level(FAN_ACTIVE_LOW, true));
+    return;
+  }
+
+  if (fan_turn_off_delay_ms == 0) {
+    fan_requested_active = false;
+    fan_turn_off_at_ms = 0;
+    digitalWrite(FAN, output_level(FAN_ACTIVE_LOW, false));
+    return;
+  }
+
+  // When the control loop asks to stop the fan, keep it physically on for a
+  // short cooldown. This protects heatsinks from heat soak after cooling stops.
+  if (fan_requested_active) {
+    fan_requested_active = false;
+    fan_turn_off_at_ms = millis() + fan_turn_off_delay_ms;
+    Serial.printf("write_fan_output - delaying FAN off for %d minute(s)\n",
+                  FAN_TURN_OFF_DELAY_MINUTES);
+  }
+
+  if (fan_turn_off_delay_active()) {
+    digitalWrite(FAN, output_level(FAN_ACTIVE_LOW, true));
+    return;
+  }
+
+  fan_turn_off_at_ms = 0;
+  digitalWrite(FAN, output_level(FAN_ACTIVE_LOW, false));
 }
 
 void write_pump_output(bool active) {
   digitalWrite(PUMP, output_level(PUMP_ACTIVE_LOW, active));
+}
+
+bool fan_turn_off_delay_active() {
+  return fan_turn_off_at_ms != 0 &&
+      static_cast<long>(fan_turn_off_at_ms - millis()) > 0;
 }
 
 void outputs_all_off() {

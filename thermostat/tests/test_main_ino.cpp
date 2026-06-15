@@ -305,6 +305,8 @@ extern JsonArray    saved_features;
 extern char         saved_device_uuid[37];
 extern AlarmID_t    alarm_temp;
 extern AlarmID_t    alarm_online;
+extern bool         fan_requested_active;
+extern unsigned long fan_turn_off_at_ms;
 
 // =============================================================================
 // Constants — pin numbers matching thermostat.ino #defines
@@ -360,6 +362,8 @@ protected:
     conn_attempts = 0;
     conn_next_attempt_ms = 0;
     conn_cooldown_until_ms = 0;
+    fan_requested_active = false;
+    fan_turn_off_at_ms = 0;
     display_feature_index = 0;
     g_display_message_calls = 0;
     g_last_display_message_title.clear();

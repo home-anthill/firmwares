@@ -104,8 +104,8 @@ JsonArray saved_features = doc_features.to<JsonArray>();
 #define PUMP_ACTIVE_LOW false
 #endif
 
-#ifndef FAN_TURN_OFF_DELAY_MINUTES
-#define FAN_TURN_OFF_DELAY_MINUTES 0
+#ifndef FAN_TURN_OFF_DELAY_SECONDS
+#define FAN_TURN_OFF_DELAY_SECONDS 0
 #endif
 
 // ---------------------------------------------------------------------------
@@ -410,7 +410,7 @@ void write_cold_output(bool active) {
 
 void write_fan_output(bool active) {
   const unsigned long fan_turn_off_delay_ms =
-      static_cast<unsigned long>(FAN_TURN_OFF_DELAY_MINUTES) * 60UL * 1000UL;
+      static_cast<unsigned long>(FAN_TURN_OFF_DELAY_SECONDS) * 1000UL;
 
   if (active) {
     fan_requested_active = true;
@@ -431,8 +431,8 @@ void write_fan_output(bool active) {
   if (fan_requested_active) {
     fan_requested_active = false;
     fan_turn_off_at_ms = millis() + fan_turn_off_delay_ms;
-    Serial.printf("write_fan_output - delaying FAN off for %d minute(s)\n",
-                  FAN_TURN_OFF_DELAY_MINUTES);
+    Serial.printf("write_fan_output - delaying FAN off for %d second(s)\n",
+                  FAN_TURN_OFF_DELAY_SECONDS);
   }
 
   if (fan_turn_off_delay_active()) {

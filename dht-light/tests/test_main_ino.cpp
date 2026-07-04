@@ -97,8 +97,12 @@ void mqtt_notify_value(const char* device_uuid, const char* feature_uuid,
 
 // --- display ----------------------------------------------------------------
 
-void init_display() {}
+void init_display(uint8_t) {}
 void update_display() {}
+void display_force_update() {}
+void display_show_message(const char*, const char*) {}
+void display_set_connectivity_status(bool, bool) {}
+void display_sleep_for(unsigned long) {}
 
 // --- dht_sensor (controllable return values) --------------------------------
 

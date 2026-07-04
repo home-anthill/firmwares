@@ -107,8 +107,18 @@ inline SerialMock Serial;
 
 // --- ESP mock ---------------------------------------------------------------
 
+struct EspMockState {
+  int restart_count{0};
+
+  static EspMockState& instance() {
+    static EspMockState s;
+    return s;
+  }
+  static void reset() { instance() = EspMockState{}; }
+};
+
 struct EspClass {
-  void restart() {}
+  void restart() { EspMockState::instance().restart_count++; }
 };
 inline EspClass ESP;
 
@@ -140,6 +150,7 @@ inline void setTime(int /*hr*/, int /*min*/, int /*sec*/,
 inline int g_digital_read_value = 0;
 
 struct GpioMockState {
+  std::map<uint8_t, uint8_t> pin_modes;
   std::map<uint8_t, uint8_t> pin_values;
   int digital_read_value{0};
 
@@ -153,7 +164,9 @@ struct GpioMockState {
   }
 };
 
-inline void pinMode(uint8_t /*pin*/, uint8_t /*mode*/) {}
+inline void pinMode(uint8_t pin, uint8_t mode) {
+  GpioMockState::instance().pin_modes[pin] = mode;
+}
 
 inline void digitalWrite(uint8_t pin, uint8_t val) {
   GpioMockState::instance().pin_values[pin] = val;
@@ -169,5 +182,6 @@ inline int  analogRead(uint8_t /*pin*/) { return 0; }
 
 #define INPUT  0x0
 #define OUTPUT 0x1
+#define INPUT_PULLUP 0x2
 #define HIGH   0x1
 #define LOW    0x0

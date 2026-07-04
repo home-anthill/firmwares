@@ -36,6 +36,8 @@ class TempSensorTest : public ::testing::Test {
 protected:
   void SetUp() override {
     TempSensorMockState::reset();
+    temp_init_sensor();
+    TempSensorMockState::reset();
   }
 };
 

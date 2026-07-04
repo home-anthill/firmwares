@@ -30,6 +30,7 @@
 
 // build-in RGB LED
 #define BOARD_RGB_LED_PIN 38
+#define DISPLAY_BUTTON_PIN 42
 
 char mac_address[18];
 
@@ -46,10 +47,6 @@ JsonDocument buildFeatures();
 
 // alarms used to periodically publish values
 AlarmID_t alarm_online;
-#if OLED_DISPLAY == true
-AlarmID_t alarm_display;
-#endif
-
 // device_uuid global variable
 char saved_device_uuid[37];
 // features array global variable
@@ -79,7 +76,7 @@ void mqtt_callback(char* topic, uint8_t* payload, unsigned int length) {
   ir_send_command(saved_device_uuid, mac_address, saved_features, topic, payload,
                   length);
   record_command_values(payload, length);
-  update_display();
+  display_show_message("Command", "Received");
 }
 
 void record_command_values(uint8_t* payload, unsigned int length) {
@@ -134,24 +131,14 @@ void publish_initial_values() {
 void alarms_init() {
   alarm_online = Alarm.timerRepeat(60, send_online_status);
   Alarm.disable(alarm_online);
-#if OLED_DISPLAY == true
-  alarm_display = Alarm.timerRepeat(5, update_display);
-  Alarm.disable(alarm_display);
-#endif
 }
 
 void alarms_enable() {
   Alarm.enable(alarm_online);
-#if OLED_DISPLAY == true
-  Alarm.enable(alarm_display);
-#endif
 }
 
 void alarms_disable() {
   Alarm.disable(alarm_online);
-#if OLED_DISPLAY == true
-  Alarm.disable(alarm_display);
-#endif
 }
 
 JsonDocument buildFeatures() {
@@ -243,7 +230,7 @@ void setup() {
   delay(1000);
 
   Serial.println("setup - starting...");
-  init_display();
+  init_display(DISPLAY_BUTTON_PIN);
   
   // 0. configure hardware
   rgbLedWrite(BOARD_RGB_LED_PIN, 0, 0, 0); 
@@ -267,7 +254,11 @@ void setup() {
 
   // 3. connect to wifi
   Serial.println("setup - connect wifi...");
+  display_set_connectivity_status(false, false);
+  update_display();
   wifi_connect(mac_address);
+  display_set_connectivity_status(true, false);
+  display_show_message("WiFi status", "Online");
 
   // 4. register to the server
   Serial.println("setup - registering this device...");
@@ -337,15 +328,23 @@ void loop() {
 
   // if not connected to the wifi, try to reconnect
   if (wifi_get_status() != WL_CONNECTED) {
+    display_set_connectivity_status(false, false);
+    update_display();
     alarms_disable();
     Serial.println("loop - WiFi connection lost!");
     wifi_reconnect(mac_address);
+    display_set_connectivity_status(true, mqtt_client.connected());
+    display_show_message("WiFi status", "Online");
   }
 
   // if not connected to mqtt server, try to reconnect
   if (!mqtt_client.connected()) {
+    display_set_connectivity_status(true, false);
+    update_display();
     Serial.println("loop - mqtt connecting...");
     mqtt_connect(saved_device_uuid);
+    display_set_connectivity_status(true, true);
+    display_show_message("MQTT status", "Online");
     publish_initial_values();
     // starts alarms
     alarms_enable();
@@ -358,7 +357,10 @@ void loop() {
   if (!mqtt_client.loop()) {
     Serial.println("loop - mqtt_client.loop() returned false, forcing disconnect to trigger reconnect");
     mqtt_client.disconnect();
+    display_set_connectivity_status(wifi_get_status() == WL_CONNECTED, false);
+    update_display();
   }
 
+  update_display();
   Alarm.delay(100);
 }

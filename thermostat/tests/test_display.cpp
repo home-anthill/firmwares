@@ -35,31 +35,6 @@ bool feature_values_get(size_t index, FeatureValue* value) {
   return true;
 }
 
-// display.cpp's file-scope flags. Reset them before every test so that a
-// previous display state does not bleed into the next test.
-extern bool showDisplay;
-extern bool display_powered;
-extern size_t display_feature_index;
-extern bool display_wifi_connected;
-extern bool display_mqtt_connected;
-extern bool display_current_valid;
-extern bool display_current_error;
-extern bool display_current_message;
-extern size_t display_current_feature_index;
-extern float display_current_value;
-extern bool display_has_rendered;
-extern unsigned long display_last_render_ms;
-extern unsigned long display_keep_on_until_ms;
-extern unsigned long display_force_off_until_ms;
-extern unsigned long display_connectivity_notice_until_ms;
-extern uint8_t display_button_pin;
-extern int display_button_last_read;
-extern unsigned long display_button_last_change_ms;
-extern bool display_button_pressed;
-extern bool display_button_long_press_handled;
-extern unsigned long display_button_pressed_at_ms;
-extern bool display_button_enabled_for_test;
-
 class DisplayTest : public ::testing::Test {
 protected:
   void SetUp() override {
@@ -67,28 +42,8 @@ protected:
     GpioMockState::reset();
     EspMockState::reset();
     g_digital_read_value = HIGH;
-    showDisplay = true;
-    display_powered = true;
-    display_feature_index = 0;
-    display_wifi_connected = true;
-    display_mqtt_connected = true;
-    display_current_valid = false;
-    display_current_error = false;
-    display_current_message = false;
-    display_current_feature_index = 0;
-    display_current_value = 0.0f;
-    display_has_rendered = false;
-    display_last_render_ms = 0;
-    display_keep_on_until_ms = 0;
-    display_force_off_until_ms = 0;
-    display_connectivity_notice_until_ms = 0;
-    display_button_pin = 255;
-    display_button_last_read = HIGH;
-    display_button_last_change_ms = 0;
-    display_button_pressed = false;
-    display_button_long_press_handled = false;
-    display_button_pressed_at_ms = 0;
-    display_button_enabled_for_test = true;
+    display_reset_for_test();
+    display_set_button_enabled_for_test(true);
     mock_set_millis(0);
     memset(g_feature_values, 0, sizeof(g_feature_values));
     g_feature_values_count = 0;
@@ -119,8 +74,7 @@ protected:
   void initDisplayForUpdate() {
     init_display(kDisplayButtonPin);
     clearDisplayMockCalls();
-    display_has_rendered = false;
-    display_last_render_ms = 0;
+    display_invalidate_render_for_test();
   }
 
   void pressButtonFor(unsigned long duration_ms) {
@@ -149,12 +103,12 @@ TEST_F(DisplayTest, InitDisplayConfiguresButtonPinPullup) {
 }
 
 TEST_F(DisplayTest, InitDisplayDoesNotConfigureButtonWhenDisabled) {
-  display_button_enabled_for_test = false;
+  display_set_button_enabled_for_test(false);
 
   init_display(kDisplayButtonPin);
 
   EXPECT_TRUE(GpioMockState::instance().pin_modes.empty());
-  EXPECT_EQ(display_button_pin, 255);
+  EXPECT_EQ(display_button_pin_for_test(), 255);
 }
 
 TEST_F(DisplayTest, InitDisplayClearsAndPrintsStarting) {
@@ -170,7 +124,7 @@ TEST_F(DisplayTest, InitDisplayLeavesShowDisplayTrueOnSuccess) {
 
   init_display(kDisplayButtonPin);
 
-  EXPECT_TRUE(showDisplay);
+  EXPECT_TRUE(display_is_available_for_test());
 }
 
 TEST_F(DisplayTest, InitDisplaySetsShowDisplayFalseOnBeginFailure) {
@@ -178,7 +132,7 @@ TEST_F(DisplayTest, InitDisplaySetsShowDisplayFalseOnBeginFailure) {
 
   init_display(kDisplayButtonPin);
 
-  EXPECT_FALSE(showDisplay);
+  EXPECT_FALSE(display_is_available_for_test());
 }
 
 TEST_F(DisplayTest, UpdateDisplayDoesNothingWhenNoFeatureValuesExist) {
@@ -229,7 +183,7 @@ TEST_F(DisplayTest, UpdateDisplayRefreshesVisibleFeatureValue) {
 }
 
 TEST_F(DisplayTest, DisabledButtonRefreshesVisibleTemperatureValue) {
-  display_button_enabled_for_test = false;
+  display_set_button_enabled_for_test(false);
   initDisplayForUpdate();
   addFeatureValue(0, "setpoint", "°C", 22.0f, true);
   addFeatureValue(1, "temperature", "°C", 23.4f, true);
@@ -296,7 +250,7 @@ TEST_F(DisplayTest, ButtonPressShowsOnlyTemperatureAndWraps) {
 
 TEST_F(DisplayTest, UpdateDisplayDoesNothingWhenDisplayIsDisabled) {
   initDisplayForUpdate();
-  showDisplay = false;
+  display_set_available_for_test(false);
   addFeatureValue(0, "temperature", "°C", 23.5f, true);
 
   update_display();
@@ -312,7 +266,7 @@ TEST_F(DisplayTest, StartupAutoPowersOffDisplayAfterThirtySeconds) {
   mock_advance_millis(30000);
   update_display();
 
-  EXPECT_FALSE(display_powered);
+  EXPECT_FALSE(display_is_powered_for_test());
   ASSERT_EQ(DisplayMockState::instance().commands.size(), 1u);
   EXPECT_EQ(DisplayMockState::instance().commands[0], SSD1306_DISPLAYOFF);
 }
@@ -325,7 +279,7 @@ TEST_F(DisplayTest, ConnectivityErrorShowsNoticeThenTemperatureAndStaysOn) {
 
   update_display();
 
-  EXPECT_TRUE(display_powered);
+  EXPECT_TRUE(display_is_powered_for_test());
   ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "WiFi status");
   EXPECT_EQ(DisplayMockState::instance().prints[1], "Offline");
@@ -338,7 +292,7 @@ TEST_F(DisplayTest, ConnectivityErrorShowsNoticeThenTemperatureAndStaysOn) {
   mock_advance_millis(1);
   update_display();
 
-  EXPECT_TRUE(display_powered);
+  EXPECT_TRUE(display_is_powered_for_test());
   ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "temperature");
   EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.5 \xF8""C"));
@@ -370,7 +324,7 @@ TEST_F(DisplayTest, ConnectivityErrorOverridesCommandSleep) {
 
   update_display();
 
-  EXPECT_TRUE(display_powered);
+  EXPECT_TRUE(display_is_powered_for_test());
   ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "MQTT error");
   EXPECT_EQ(DisplayMockState::instance().prints[1], "Disconnected");
@@ -384,7 +338,7 @@ TEST_F(DisplayTest, CommandSleepPowersDisplayOff) {
 
   display_sleep_for(30000);
 
-  EXPECT_FALSE(display_powered);
+  EXPECT_FALSE(display_is_powered_for_test());
   ASSERT_EQ(DisplayMockState::instance().commands.size(), 1u);
   EXPECT_EQ(DisplayMockState::instance().commands[0], SSD1306_DISPLAYOFF);
 }
@@ -397,7 +351,7 @@ TEST_F(DisplayTest, ForceUpdateDoesNotWakeDuringCommandSleep) {
 
   display_force_update();
 
-  EXPECT_FALSE(display_powered);
+  EXPECT_FALSE(display_is_powered_for_test());
   EXPECT_TRUE(DisplayMockState::instance().commands.empty());
   EXPECT_TRUE(DisplayMockState::instance().prints.empty());
 }
@@ -409,17 +363,17 @@ TEST_F(DisplayTest, SinglePressTurnsDisplayOnForThirtySecondsWhenOff) {
   clearDisplayMockCalls();
 
   pressButtonFor(100);
-  EXPECT_TRUE(display_powered);
+  EXPECT_TRUE(display_is_powered_for_test());
   ASSERT_GE(DisplayMockState::instance().commands.size(), 1u);
   EXPECT_EQ(DisplayMockState::instance().commands[0], SSD1306_DISPLAYON);
 
   mock_advance_millis(29999);
   update_display();
-  EXPECT_TRUE(display_powered);
+  EXPECT_TRUE(display_is_powered_for_test());
 
   mock_advance_millis(1);
   update_display();
-  EXPECT_FALSE(display_powered);
+  EXPECT_FALSE(display_is_powered_for_test());
   EXPECT_EQ(DisplayMockState::instance().commands.back(), SSD1306_DISPLAYOFF);
 }
 
@@ -432,7 +386,7 @@ TEST_F(DisplayTest, SinglePressWhileOnKeepsShowingTemperature) {
   pressButtonFor(100);
   pressButtonFor(100);
 
-  EXPECT_TRUE(display_powered);
+  EXPECT_TRUE(display_is_powered_for_test());
   ASSERT_GE(DisplayMockState::instance().prints.size(), 4u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "temperature");
   EXPECT_EQ(DisplayMockState::instance().prints[2], "temperature");
@@ -447,7 +401,7 @@ TEST_F(DisplayTest, SinglePressSkipsConnectivityErrorAndShowsFeatureValue) {
 
   pressButtonFor(100);
 
-  EXPECT_TRUE(display_powered);
+  EXPECT_TRUE(display_is_powered_for_test());
   ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "temperature");
   EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.5 \xF8""C"));
@@ -467,26 +421,26 @@ TEST_F(DisplayTest, ConnectivityErrorDoesNotReturnAfterNoticeExpires) {
   g_feature_values[0].value = 23.6f;
   update_display();
 
-  EXPECT_TRUE(display_powered);
+  EXPECT_TRUE(display_is_powered_for_test());
   ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "temperature");
   EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.6 \xF8""C"));
 }
 
 TEST_F(DisplayTest, DisabledButtonKeepsDisplayOnPastStartupTimeout) {
-  display_button_enabled_for_test = false;
+  display_set_button_enabled_for_test(false);
   init_display(kDisplayButtonPin);
   clearDisplayMockCalls();
 
   mock_advance_millis(60000);
   update_display();
 
-  EXPECT_TRUE(display_powered);
+  EXPECT_TRUE(display_is_powered_for_test());
   EXPECT_TRUE(DisplayMockState::instance().commands.empty());
 }
 
 TEST_F(DisplayTest, DisabledButtonIgnoresCommandSleep) {
-  display_button_enabled_for_test = false;
+  display_set_button_enabled_for_test(false);
   init_display(kDisplayButtonPin);
   clearDisplayMockCalls();
 
@@ -494,12 +448,12 @@ TEST_F(DisplayTest, DisabledButtonIgnoresCommandSleep) {
   mock_advance_millis(30000);
   update_display();
 
-  EXPECT_TRUE(display_powered);
+  EXPECT_TRUE(display_is_powered_for_test());
   EXPECT_TRUE(DisplayMockState::instance().commands.empty());
 }
 
 TEST_F(DisplayTest, DisabledButtonAllowsForceUpdateAfterCommandSleep) {
-  display_button_enabled_for_test = false;
+  display_set_button_enabled_for_test(false);
   init_display(kDisplayButtonPin);
   addFeatureValue(0, "temperature", "°C", 23.5f, true);
   display_sleep_for(30000);
@@ -507,13 +461,13 @@ TEST_F(DisplayTest, DisabledButtonAllowsForceUpdateAfterCommandSleep) {
 
   display_force_update();
 
-  EXPECT_TRUE(display_powered);
+  EXPECT_TRUE(display_is_powered_for_test());
   ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "temperature");
 }
 
 TEST_F(DisplayTest, DisabledButtonPrefersTemperatureOverControllerValues) {
-  display_button_enabled_for_test = false;
+  display_set_button_enabled_for_test(false);
   init_display(kDisplayButtonPin);
   addFeatureValue(0, "setpoint", "°C", 22.0f, true);
   addFeatureValue(1, "tolerance", "°C", 1.0f, true);
@@ -522,14 +476,14 @@ TEST_F(DisplayTest, DisabledButtonPrefersTemperatureOverControllerValues) {
 
   update_display();
 
-  EXPECT_TRUE(display_powered);
+  EXPECT_TRUE(display_is_powered_for_test());
   ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "temperature");
   EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.5 \xF8""C"));
 }
 
 TEST_F(DisplayTest, DisabledButtonCommandMessageStaysVisibleThenReturnsToTemperature) {
-  display_button_enabled_for_test = false;
+  display_set_button_enabled_for_test(false);
   init_display(kDisplayButtonPin);
   addFeatureValue(0, "setpoint", "°C", 22.0f, true);
   addFeatureValue(1, "tolerance", "°C", 1.0f, true);
@@ -538,7 +492,7 @@ TEST_F(DisplayTest, DisabledButtonCommandMessageStaysVisibleThenReturnsToTempera
 
   display_show_message("Command", "Received");
 
-  EXPECT_TRUE(display_powered);
+  EXPECT_TRUE(display_is_powered_for_test());
   ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "Command");
   EXPECT_EQ(DisplayMockState::instance().prints[1], "Received");
@@ -556,18 +510,18 @@ TEST_F(DisplayTest, DisabledButtonCommandMessageStaysVisibleThenReturnsToTempera
 }
 
 TEST_F(DisplayTest, DisabledButtonIgnoresSinglePress) {
-  display_button_enabled_for_test = false;
+  display_set_button_enabled_for_test(false);
   init_display(kDisplayButtonPin);
   clearDisplayMockCalls();
 
   pressButtonFor(100);
 
-  EXPECT_TRUE(display_powered);
+  EXPECT_TRUE(display_is_powered_for_test());
   EXPECT_TRUE(DisplayMockState::instance().commands.empty());
 }
 
 TEST_F(DisplayTest, DisabledButtonIgnoresLongPress) {
-  display_button_enabled_for_test = false;
+  display_set_button_enabled_for_test(false);
   init_display(kDisplayButtonPin);
 
   g_digital_read_value = LOW;
@@ -578,7 +532,7 @@ TEST_F(DisplayTest, DisabledButtonIgnoresLongPress) {
   update_display();
 
   EXPECT_EQ(EspMockState::instance().restart_count, 0);
-  EXPECT_TRUE(display_powered);
+  EXPECT_TRUE(display_is_powered_for_test());
 }
 
 TEST_F(DisplayTest, LongPressRestartsEsp32AfterTenSeconds) {
@@ -610,18 +564,18 @@ TEST_F(DisplayTest, ShowMessagePowersDisplayAndKeepsItOnTemporarily) {
 
   display_show_message("Command", "Received");
 
-  EXPECT_TRUE(display_powered);
+  EXPECT_TRUE(display_is_powered_for_test());
   ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "Command");
   EXPECT_EQ(DisplayMockState::instance().prints[1], "Received");
 
   mock_advance_millis(29999);
   update_display();
-  EXPECT_TRUE(display_powered);
+  EXPECT_TRUE(display_is_powered_for_test());
 
   mock_advance_millis(1);
   update_display();
-  EXPECT_FALSE(display_powered);
+  EXPECT_FALSE(display_is_powered_for_test());
 }
 
 TEST_F(DisplayTest, ShowMessageCanRenderWhileConnectivityIsPending) {
@@ -631,7 +585,7 @@ TEST_F(DisplayTest, ShowMessageCanRenderWhileConnectivityIsPending) {
 
   display_show_message("Command", "Received");
 
-  EXPECT_TRUE(display_powered);
+  EXPECT_TRUE(display_is_powered_for_test());
   ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "Command");
   EXPECT_EQ(DisplayMockState::instance().prints[1], "Received");

@@ -172,6 +172,7 @@ target_link_libraries(test_main_ino
   GTest::gtest_main
   ArduinoJson
 )
+target_compile_definitions(test_main_ino PRIVATE HOME_ANTHILL_TEST_OLED_DISPLAY)
 
 # ---------------------------------------------------------------------------
 # Register tests with CTest

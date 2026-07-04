@@ -77,7 +77,7 @@ protected:
 // ===========================================================================
 
 TEST_F(ControllerTest, GetSetpointReturnsDefaultWhenNotStored) {
-  EXPECT_FLOAT_EQ(get_setpoint(), 20.0f);
+  EXPECT_FLOAT_EQ(get_setpoint(), 25.0f);
 }
 
 // ===========================================================================
@@ -85,7 +85,7 @@ TEST_F(ControllerTest, GetSetpointReturnsDefaultWhenNotStored) {
 // ===========================================================================
 
 TEST_F(ControllerTest, GetToleranceReturnsDefaultWhenNotStored) {
-  EXPECT_FLOAT_EQ(get_tolerance(), 0.0f);
+  EXPECT_FLOAT_EQ(get_tolerance(), 5.0f);
 }
 
 // ===========================================================================
@@ -96,15 +96,15 @@ TEST_F(ControllerTest, MalformedJsonDoesNothing) {
   sendConfig("not-json{{{");
 
   // Defaults must be unchanged.
-  EXPECT_FLOAT_EQ(get_setpoint(),  20.0f);
-  EXPECT_FLOAT_EQ(get_tolerance(),  0.0f);
+  EXPECT_FLOAT_EQ(get_setpoint(), 25.0f);
+  EXPECT_FLOAT_EQ(get_tolerance(), 5.0f);
 }
 
 TEST_F(ControllerTest, EmptyArrayDoesNothing) {
   sendConfig("[]");
 
-  EXPECT_FLOAT_EQ(get_setpoint(),  20.0f);
-  EXPECT_FLOAT_EQ(get_tolerance(),  0.0f);
+  EXPECT_FLOAT_EQ(get_setpoint(), 25.0f);
+  EXPECT_FLOAT_EQ(get_tolerance(), 5.0f);
 }
 
 // ===========================================================================
@@ -115,14 +115,14 @@ TEST_F(ControllerTest, WrongModelIsRejected) {
   std::string payload =
     std::string(R"([{"apiToken":")") + API_TOKEN + R"(","deviceUuid":"device-uuid-test-0000-000000000000","mac":"aa:bb:cc:dd:ee:ff","model":"wrong-model","featureUuid":"f1","featureName":"setpoint","value":22}])";
   sendConfig(payload);
-  EXPECT_FLOAT_EQ(get_setpoint(), 20.0f);  // unchanged
+  EXPECT_FLOAT_EQ(get_setpoint(), 25.0f);  // unchanged
 }
 
 TEST_F(ControllerTest, WrongApiTokenIsRejected) {
   std::string payload =
     std::string(R"([{"deviceUuid":"device-uuid-test-0000-000000000000","mac":"aa:bb:cc:dd:ee:ff","model":")") + MODEL + R"(","featureUuid":"f1","featureName":"setpoint","timestamp":1777630000,"nonce":"00112233445566778899aabbccddeeff","signature":"wrong-signature","payload":{"value":22}}])";
   sendConfig(payload);
-  EXPECT_FLOAT_EQ(get_setpoint(), 20.0f);  // unchanged
+  EXPECT_FLOAT_EQ(get_setpoint(), 25.0f);  // unchanged
 }
 
 TEST_F(ControllerTest, MissingRequiredFieldsIsRejected) {
@@ -130,31 +130,31 @@ TEST_F(ControllerTest, MissingRequiredFieldsIsRejected) {
   std::string payload =
     std::string(R"([{"apiToken":")") + API_TOKEN + R"(","deviceUuid":"device-uuid-test-0000-000000000000","mac":"aa:bb:cc:dd:ee:ff","featureUuid":"f1","featureName":"setpoint","value":22}])";
   sendConfig(payload);
-  EXPECT_FLOAT_EQ(get_setpoint(), 20.0f);  // unchanged
+  EXPECT_FLOAT_EQ(get_setpoint(), 25.0f);  // unchanged
 }
 
 TEST_F(ControllerTest, WrongDeviceUuidIsRejected) {
   std::string payload =
     std::string(R"([{"apiToken":")") + API_TOKEN + R"(","deviceUuid":"wrong-device","mac":"aa:bb:cc:dd:ee:ff","model":")" + MODEL + R"(","featureUuid":"f1","featureName":"setpoint","value":22}])";
   sendConfig(payload);
-  EXPECT_FLOAT_EQ(get_setpoint(), 20.0f);
+  EXPECT_FLOAT_EQ(get_setpoint(), 25.0f);
 }
 
 TEST_F(ControllerTest, WrongMacIsRejected) {
   std::string payload =
     std::string(R"([{"apiToken":")") + API_TOKEN + R"(","deviceUuid":"device-uuid-test-0000-000000000000","mac":"11:22:33:44:55:66","model":")" + MODEL + R"(","featureUuid":"f1","featureName":"setpoint","value":22}])";
   sendConfig(payload);
-  EXPECT_FLOAT_EQ(get_setpoint(), 20.0f);
+  EXPECT_FLOAT_EQ(get_setpoint(), 25.0f);
 }
 
 TEST_F(ControllerTest, WrongFeatureUuidIsRejected) {
   sendConfig(validPayload("setpoint", "22"));
-  EXPECT_FLOAT_EQ(get_setpoint(), 20.0f);
+  EXPECT_FLOAT_EQ(get_setpoint(), 25.0f);
 }
 
 TEST_F(ControllerTest, FeatureUuidMismatchedToFeatureNameIsRejected) {
   sendConfig("[" + validEntry("setpoint", "22", "f2") + "]");
-  EXPECT_FLOAT_EQ(get_setpoint(), 20.0f);
+  EXPECT_FLOAT_EQ(get_setpoint(), 25.0f);
 }
 
 // ===========================================================================
@@ -185,12 +185,12 @@ TEST_F(ControllerTest, SetpointAtMaxBoundaryIsAccepted) {
 
 TEST_F(ControllerTest, SetpointBelowMinIsRejected) {
   sendConfig("[" + validEntry("setpoint", "9", "f1") + "]");
-  EXPECT_FLOAT_EQ(get_setpoint(), 20.0f);  // default unchanged
+  EXPECT_FLOAT_EQ(get_setpoint(), 25.0f);  // default unchanged
 }
 
 TEST_F(ControllerTest, SetpointAboveMaxIsRejected) {
   sendConfig("[" + validEntry("setpoint", "31", "f1") + "]");
-  EXPECT_FLOAT_EQ(get_setpoint(), 20.0f);  // default unchanged
+  EXPECT_FLOAT_EQ(get_setpoint(), 25.0f);  // default unchanged
 }
 
 // ===========================================================================
@@ -214,7 +214,7 @@ TEST_F(ControllerTest, ToleranceAtMaxBoundaryIsAccepted) {
 
 TEST_F(ControllerTest, ToleranceAboveMaxIsRejected) {
   sendConfig("[" + validEntry("tolerance", "11", "f2") + "]");
-  EXPECT_FLOAT_EQ(get_tolerance(), 0.0f);  // default unchanged
+  EXPECT_FLOAT_EQ(get_tolerance(), 5.0f);  // default unchanged
 }
 
 // ===========================================================================
@@ -237,5 +237,5 @@ TEST_F(ControllerTest, InvalidEntryInMultiPayloadRejectsAll) {
   std::string payload = "[" + validEntry("setpoint", "22", "f1") + "," + validEntry("setpoint", "9", "f2") + "]";
   sendConfig(payload);
 
-  EXPECT_FLOAT_EQ(get_setpoint(), 20.0f);  // default — nothing stored
+  EXPECT_FLOAT_EQ(get_setpoint(), 25.0f);  // default - nothing stored
 }

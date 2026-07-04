@@ -70,11 +70,24 @@ void mqtt_notify_value(const char* /*device_uuid*/, const char* /*feature_uuid*/
 // --- display ----------------------------------------------------------------
 
 static int g_update_display_calls = 0;
+static int g_display_message_calls = 0;
+static std::string g_last_display_message_title;
+static std::string g_last_display_message_detail;
 
-void init_display() {}
+void init_display(uint8_t) {}
 void update_display() {
   g_update_display_calls++;
 }
+void display_force_update() {
+  g_update_display_calls++;
+}
+void display_show_message(const char* title, const char* detail) {
+  g_display_message_calls++;
+  g_last_display_message_title = title == nullptr ? "" : title;
+  g_last_display_message_detail = detail == nullptr ? "" : detail;
+}
+void display_set_connectivity_status(bool, bool) {}
+void display_sleep_for(unsigned long) {}
 
 // --- feature_values ---------------------------------------------------------
 
@@ -98,8 +111,20 @@ void feature_values_init(JsonArray /*features*/) {
   FeatureValueCapture::instance().init_calls++;
 }
 void feature_values_clear() {}
-size_t feature_values_count() { return 0; }
-bool feature_values_get(size_t /*index*/, FeatureValue* /*value*/) { return false; }
+size_t feature_values_count() { return FeatureValueCapture::instance().set_calls.size(); }
+bool feature_values_get(size_t index, FeatureValue* value) {
+  if (value == nullptr || index >= FeatureValueCapture::instance().set_calls.size()) {
+    return false;
+  }
+
+  const FeatureValueSetCall& call = FeatureValueCapture::instance().set_calls[index];
+  memset(value, 0, sizeof(*value));
+  strncpy(value->name, call.name.c_str(), sizeof(value->name) - 1);
+  strncpy(value->unit, "-", sizeof(value->unit) - 1);
+  value->value = call.value;
+  value->has_value = true;
+  return true;
+}
 bool feature_values_set(const char* name, float value) {
   FeatureValueCapture::instance().set_calls.push_back({
     name ? name : "",
@@ -186,6 +211,10 @@ protected:
     g_update_display_calls = 0;
     g_stored_uuid_len = 0;
     memset(g_stored_uuid, 0, sizeof(g_stored_uuid));
+    g_display_message_calls = 0;
+    g_last_display_message_title.clear();
+    g_last_display_message_detail.clear();
+    mock_set_millis(0);
   }
 
   void addFeature(const char* name, const char* uuid) {
@@ -384,7 +413,9 @@ TEST_F(MainInoTest, MqttCallbackDelegatesToIrSendCommand) {
   ASSERT_EQ(IrCommandCapture::instance().calls.size(), 1u);
   EXPECT_EQ(IrCommandCapture::instance().calls[0].topic, topic);
   EXPECT_EQ(IrCommandCapture::instance().calls[0].length, len);
-  EXPECT_EQ(g_update_display_calls, 1);
+  EXPECT_EQ(g_display_message_calls, 1);
+  EXPECT_EQ(g_last_display_message_title, "Command");
+  EXPECT_EQ(g_last_display_message_detail, "Received");
 }
 
 TEST_F(MainInoTest, MqttCallbackRecordsCommandValues) {
@@ -405,6 +436,22 @@ TEST_F(MainInoTest, MqttCallbackRecordsCommandValues) {
   EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[1].value, 23.0f);
   EXPECT_EQ(FeatureValueCapture::instance().set_calls[2].name, "mode");
   EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[2].value, 3.0f);
+}
+
+TEST_F(MainInoTest, MqttCallbackShowsCommandReceivedMessage) {
+  const char* topic = "devices/dev-uuid/values";
+  const char* payload = R"([
+    {"featureName":"on","value":true},
+    {"featureName":"setpoint","payload":{"value":23}},
+    {"featureName":"mode","value":3}
+  ])";
+  auto* p = reinterpret_cast<uint8_t*>(const_cast<char*>(payload));
+
+  mqtt_callback(const_cast<char*>(topic), p, static_cast<unsigned int>(strlen(payload)));
+
+  EXPECT_EQ(g_display_message_calls, 1);
+  EXPECT_EQ(g_last_display_message_title, "Command");
+  EXPECT_EQ(g_last_display_message_detail, "Received");
 }
 
 TEST_F(MainInoTest, RecordCommandValuesIgnoresInvalidEntries) {

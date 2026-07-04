@@ -19,6 +19,8 @@
 #include <vector>
 
 #define SSD1306_SWITCHCAPVCC 1
+#define SSD1306_DISPLAYOFF 0xAE
+#define SSD1306_DISPLAYON 0xAF
 
 struct DisplayMockState {
   bool begin_result{true};
@@ -26,9 +28,12 @@ struct DisplayMockState {
   int begin_count{0};
   int clear_count{0};
   int display_count{0};
+  int command_count{0};
+  uint8_t last_command{0};
   float last_print_float{0.0f};
   const char* last_print_str{nullptr};
   std::vector<std::string> prints;
+  std::vector<uint8_t> commands;
 
   static DisplayMockState& instance() {
     static DisplayMockState s;
@@ -51,6 +56,12 @@ public:
 
   void clearDisplay() { DisplayMockState::instance().clear_count++; }
   void display()      { DisplayMockState::instance().display_count++; }
+  void ssd1306_command(uint8_t c) {
+    auto& state = DisplayMockState::instance();
+    state.command_count++;
+    state.last_command = c;
+    state.commands.push_back(c);
+  }
 
   void setTextSize(uint8_t /*s*/) override          {}
   void setTextColor(uint16_t /*c*/) override        {}

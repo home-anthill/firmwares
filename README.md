@@ -8,6 +8,31 @@ sensors
 </h1>
 
 
+## :compass: Start here: what each folder contains :compass:
+
+> [!IMPORTANT]
+> **Each device folder is a separate firmware project.** The five sensor and
+> controller projects use Arduino CLI, while
+> [`thermostat-mcp9600-simulator`](thermostat-mcp9600-simulator/) is a separate
+> ESP-IDF project used to test the thermostat without a physical MCP9600
+> temperature sensor. Start with the two detailed guides linked below when
+> working on the thermostat or its simulator.
+
+| Folder | What it does |
+|---|---|
+| [`dht-light/`](dht-light/) | ESP32 sensor firmware that reads a DHT22 temperature/humidity sensor and a Grove digital light sensor, then publishes their values over MQTT. |
+| [`airquality-pir/`](airquality-pir/) | ESP32 sensor firmware for Grove air-quality readings and PIR motion detection. |
+| [`barometer/`](barometer/) | ESP32 sensor firmware that reads atmospheric pressure from a XENSIV pressure sensor. |
+| [`ac-beko/`](ac-beko/) | ESP32 controller firmware that receives signed MQTT commands and controls a Beko air conditioner through COOLIX infrared commands. |
+| [`ac-lg/`](ac-lg/) | ESP32 controller firmware that receives signed MQTT commands and controls an LG air conditioner through LG infrared commands. |
+| **[`thermostat/`](thermostat/)** | **Offline-first ESP32 thermostat firmware.** It reads an MCP9600 thermocouple, applies heating or cooling hysteresis, safely drives HEAT/COLD/FAN/PUMP outputs, persists its configuration, and connects to the platform through MQTT. **Read the [complete thermostat guide](thermostat/README.md) before changing its control or output-safety logic.** |
+| **[`thermostat-mcp9600-simulator/`](thermostat-mcp9600-simulator/)** | **Standalone ESP-IDF firmware for a second ESP32-S3 that emulates an MCP9600 over I2C.** Use it to supply adjustable temperatures to the thermostat during bench testing without the real sensor. **See the [simulator setup, wiring, build, and flashing guide](thermostat-mcp9600-simulator/README.md).** |
+
+Every Arduino firmware folder also contains a `tests/` directory with its
+host-side CMake/GoogleTest suite. Generated `build/` directories contain local
+build artifacts and are not source projects.
+
+
 ## :open_book: Documentation :open_book:
 
 Take a look here [home-anthill/docs](https://github.com/home-anthill/docs)

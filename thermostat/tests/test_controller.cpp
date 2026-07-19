@@ -158,7 +158,7 @@ TEST_F(ControllerTest, FeatureUuidMismatchedToFeatureNameIsRejected) {
 }
 
 // ===========================================================================
-// set_configuration — setpoint validation (TEMP_MIN=10, TEMP_MAX=30)
+// set_configuration — setpoint validation (TEMP_MIN=10, TEMP_MAX=35)
 // ===========================================================================
 
 TEST_F(ControllerTest, SetpointInRangeIsStored) {
@@ -179,8 +179,8 @@ TEST_F(ControllerTest, SetpointAtMinBoundaryIsAccepted) {
 }
 
 TEST_F(ControllerTest, SetpointAtMaxBoundaryIsAccepted) {
-  sendConfig("[" + validEntry("setpoint", "30", "f1") + "]");
-  EXPECT_FLOAT_EQ(get_setpoint(), 30.0f);
+  sendConfig("[" + validEntry("setpoint", "35", "f1") + "]");
+  EXPECT_FLOAT_EQ(get_setpoint(), 35.0f);
 }
 
 TEST_F(ControllerTest, SetpointBelowMinIsRejected) {
@@ -189,7 +189,7 @@ TEST_F(ControllerTest, SetpointBelowMinIsRejected) {
 }
 
 TEST_F(ControllerTest, SetpointAboveMaxIsRejected) {
-  sendConfig("[" + validEntry("setpoint", "31", "f1") + "]");
+  sendConfig("[" + validEntry("setpoint", "36", "f1") + "]");
   EXPECT_FLOAT_EQ(get_setpoint(), 25.0f);  // default unchanged
 }
 

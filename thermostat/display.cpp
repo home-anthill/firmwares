@@ -206,7 +206,7 @@ static void render_feature_value(const FeatureValue& value) {
     // if unit is missing or '-' skip it while writing on display
     snprintf(value_line, sizeof(value_line), "%.1f", value.value);
   } else {
-    snprintf(value_line, sizeof(value_line), "%.1f %s", value.value, display_unit);
+    snprintf(value_line, sizeof(value_line), "%.2f %s", value.value, display_unit);
   }
 
   begin_render();

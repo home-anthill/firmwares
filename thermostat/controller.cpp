@@ -71,7 +71,7 @@ static bool claim_command_nonce(const char* nonce) {
 
 // Temperature ranges
 #define TEMP_MIN 10
-#define TEMP_MAX 30
+#define TEMP_MAX 35
 #define TOLERANCE_MIN 0
 #define TOLERANCE_MAX 10
 
@@ -151,7 +151,6 @@ static constexpr float DEFAULT_SETPOINT = 25.0f;
 static constexpr float DEFAULT_TOLERANCE = 5.0f;
 
 float get_setpoint() {
-  Serial.println("get_setpoint - called");
   JsonDocument doc;
   JsonArray featureValues = doc.to<JsonArray>();
   storage_get_feature_values(featureValues);
@@ -168,7 +167,6 @@ float get_setpoint() {
 }
 
 float get_tolerance() {
-  Serial.println("get_tolerance - called");
   JsonDocument doc;
   JsonArray featureValues = doc.to<JsonArray>();
   storage_get_feature_values(featureValues);

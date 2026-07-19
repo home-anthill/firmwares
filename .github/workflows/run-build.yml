@@ -88,7 +88,7 @@ jobs:
           cp secrets-template dht-light/secrets.h
           cp secrets-template ac-beko/secrets.h
           cp secrets-template ac-lg/secrets.h
-          cp secrets-template thermostat/secrets.h
+          cp secrets-thermostat-template thermostat/secrets.h
 
           # build
           cd airquality-pir
@@ -127,7 +127,7 @@ jobs:
           cp secrets-template dht-light/secrets.h
           cp secrets-template ac-beko/secrets.h
           cp secrets-template ac-lg/secrets.h
-          cp secrets-template thermostat/secrets.h
+          cp secrets-thermostat-template thermostat/secrets.h
 
       - name: Build and run unit tests
         run: |

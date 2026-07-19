@@ -160,23 +160,35 @@ target_link_libraries(test_controller
 # inside test_main_ino.cpp itself, so no additional .cpp files are needed.
 # setup() and loop() compile and link but are never called by the tests.
 # ---------------------------------------------------------------------------
+function(configure_main_ino_test target operating_mode)
+  target_compile_definitions(${target} PRIVATE
+    HOME_ANTHILL_TEST_OLED_DISPLAY
+    OPERATING_MODE=${operating_mode}
+  )
+
+  target_include_directories(${target} PRIVATE
+    mocks   # Arduino.h, WiFi.h, WiFiClientSecure.h, PubSubClient.h, TimeAlarms.h stubs
+    ..      # wifi_handler.h, mqtt_handler.h, registration.h, storage.h,
+            # temp_sensor.h, display.h, controller.h, secrets.h
+  )
+
+  target_link_libraries(${target}
+    GTest::gtest_main
+    ArduinoJson
+  )
+endfunction()
+
 add_executable(test_main_ino
   test_main_ino.cpp
   main_ino_wrapper.cpp   # thin .cpp that #includes thermostat.ino
 )
+configure_main_ino_test(test_main_ino 0)
 
-target_compile_definitions(test_main_ino PRIVATE HOME_ANTHILL_TEST_OLED_DISPLAY)
-
-target_include_directories(test_main_ino PRIVATE
-  mocks   # Arduino.h, WiFi.h, WiFiClientSecure.h, PubSubClient.h, TimeAlarms.h stubs
-  ..      # wifi_handler.h, mqtt_handler.h, registration.h, storage.h,
-          # temp_sensor.h, display.h, controller.h, secrets.h
+add_executable(test_main_ino_heat
+  test_main_ino.cpp
+  main_ino_wrapper.cpp
 )
-
-target_link_libraries(test_main_ino
-  GTest::gtest_main
-  ArduinoJson
-)
+configure_main_ino_test(test_main_ino_heat 1)
 
 # ---------------------------------------------------------------------------
 # Register tests with CTest
@@ -189,3 +201,4 @@ add_test(NAME display_tests       COMMAND test_display)
 add_test(NAME temp_sensor_tests   COMMAND test_temp_sensor)
 add_test(NAME controller_tests    COMMAND test_controller)
 add_test(NAME main_ino_tests      COMMAND test_main_ino)
+add_test(NAME main_ino_heat_tests COMMAND test_main_ino_heat)

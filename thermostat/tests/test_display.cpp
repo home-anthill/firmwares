@@ -165,7 +165,7 @@ TEST_F(DisplayTest, ButtonPressRendersFirstAvailableFeatureValue) {
   EXPECT_EQ(DisplayMockState::instance().display_count, 1);
   ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "temperature");
-  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.5 \xF8""C"));
+  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.50 \xF8""C"));
 }
 
 TEST_F(DisplayTest, UpdateDisplayRefreshesVisibleFeatureValue) {
@@ -179,7 +179,7 @@ TEST_F(DisplayTest, UpdateDisplayRefreshesVisibleFeatureValue) {
 
   ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "temperature");
-  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.5 \xF8""C"));
+  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.50 \xF8""C"));
 }
 
 TEST_F(DisplayTest, DisabledButtonRefreshesVisibleTemperatureValue) {
@@ -195,7 +195,7 @@ TEST_F(DisplayTest, DisabledButtonRefreshesVisibleTemperatureValue) {
 
   ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "temperature");
-  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.5 \xF8""C"));
+  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.50 \xF8""C"));
 }
 
 TEST_F(DisplayTest, ButtonPressSkipsFeaturesWithoutValues) {
@@ -229,7 +229,7 @@ TEST_F(DisplayTest, ButtonPressSkipsOnlineFeatureValue) {
 
   ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "temperature");
-  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.5 \xF8""C"));
+  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.50 \xF8""C"));
 }
 
 TEST_F(DisplayTest, ButtonPressShowsOnlyTemperatureAndWraps) {
@@ -243,9 +243,9 @@ TEST_F(DisplayTest, ButtonPressShowsOnlyTemperatureAndWraps) {
 
   ASSERT_GE(DisplayMockState::instance().prints.size(), 4u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "temperature");
-  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.5 \xF8""C"));
+  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.50 \xF8""C"));
   EXPECT_EQ(DisplayMockState::instance().prints[2], "temperature");
-  EXPECT_EQ(DisplayMockState::instance().prints[3], std::string("23.5 \xF8""C"));
+  EXPECT_EQ(DisplayMockState::instance().prints[3], std::string("23.50 \xF8""C"));
 }
 
 TEST_F(DisplayTest, UpdateDisplayDoesNothingWhenDisplayIsDisabled) {
@@ -295,7 +295,7 @@ TEST_F(DisplayTest, ConnectivityErrorShowsNoticeThenTemperatureAndStaysOn) {
   EXPECT_TRUE(display_is_powered_for_test());
   ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "temperature");
-  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.5 \xF8""C"));
+  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.50 \xF8""C"));
   EXPECT_TRUE(DisplayMockState::instance().commands.empty());
 }
 
@@ -313,7 +313,7 @@ TEST_F(DisplayTest, ConnectivityNoticeDoesNotExtendForSameErrorStatus) {
 
   ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "temperature");
-  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.5 \xF8""C"));
+  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.50 \xF8""C"));
 }
 
 TEST_F(DisplayTest, ConnectivityErrorOverridesCommandSleep) {
@@ -404,7 +404,7 @@ TEST_F(DisplayTest, SinglePressSkipsConnectivityErrorAndShowsFeatureValue) {
   EXPECT_TRUE(display_is_powered_for_test());
   ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "temperature");
-  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.5 \xF8""C"));
+  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.50 \xF8""C"));
 }
 
 TEST_F(DisplayTest, ConnectivityErrorDoesNotReturnAfterNoticeExpires) {
@@ -424,7 +424,7 @@ TEST_F(DisplayTest, ConnectivityErrorDoesNotReturnAfterNoticeExpires) {
   EXPECT_TRUE(display_is_powered_for_test());
   ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "temperature");
-  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.6 \xF8""C"));
+  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.60 \xF8""C"));
 }
 
 TEST_F(DisplayTest, DisabledButtonKeepsDisplayOnPastStartupTimeout) {
@@ -479,7 +479,7 @@ TEST_F(DisplayTest, DisabledButtonPrefersTemperatureOverControllerValues) {
   EXPECT_TRUE(display_is_powered_for_test());
   ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "temperature");
-  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.5 \xF8""C"));
+  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.50 \xF8""C"));
 }
 
 TEST_F(DisplayTest, DisabledButtonCommandMessageStaysVisibleThenReturnsToTemperature) {
@@ -506,7 +506,7 @@ TEST_F(DisplayTest, DisabledButtonCommandMessageStaysVisibleThenReturnsToTempera
   update_display();
   ASSERT_GE(DisplayMockState::instance().prints.size(), 2u);
   EXPECT_EQ(DisplayMockState::instance().prints[0], "temperature");
-  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.5 \xF8""C"));
+  EXPECT_EQ(DisplayMockState::instance().prints[1], std::string("23.50 \xF8""C"));
 }
 
 TEST_F(DisplayTest, DisabledButtonIgnoresSinglePress) {

@@ -152,6 +152,8 @@ inline int g_digital_read_value = 0;
 struct GpioMockState {
   std::map<uint8_t, uint8_t> pin_modes;
   std::map<uint8_t, uint8_t> pin_values;
+  std::map<uint8_t, uint8_t> preloaded_values;
+  std::map<uint8_t, bool> preloaded_before_pin_mode;
   int digital_read_value{0};
 
   static GpioMockState& instance() {
@@ -165,7 +167,10 @@ struct GpioMockState {
 };
 
 inline void pinMode(uint8_t pin, uint8_t mode) {
-  GpioMockState::instance().pin_modes[pin] = mode;
+  auto& state = GpioMockState::instance();
+  state.preloaded_before_pin_mode[pin] =
+      state.preloaded_values.find(pin) != state.preloaded_values.end();
+  state.pin_modes[pin] = mode;
 }
 
 inline void digitalWrite(uint8_t pin, uint8_t val) {

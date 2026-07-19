@@ -4,11 +4,26 @@ This file provides guidance to AI agents when working with code in this reposito
 
 ## Project Overview
 
-This is a monorepo of Arduino/ESP32 firmwares for the **home-anthill** IoT platform. Each subdirectory is an independent firmware for a specific sensor/controller device: `dht-light`, `airquality-pir`, `barometer`, `ac-beko`, `ac-lg`, `thermostat`.
+This is a monorepo of ESP32 projects for the **home-anthill** IoT platform. The device firmwares are `dht-light`, `airquality-pir`, `barometer`, `ac-beko`, `ac-lg`, and `thermostat`. The repository also contains the separate `thermostat-mcp9600-simulator` test project.
 
-All firmwares target **ESP32** boards (esp32, esp32s2, esp32s3) and share a common architecture pattern.
+The device firmwares use Arduino CLI, target **ESP32** boards (esp32, esp32s2, esp32s3), and share a common architecture pattern. The MCP9600 simulator is an ESP-IDF project for ESP32-S3 and is not part of the Arduino firmware build matrix.
 
 Outbound telemetry is signed with HMAC-SHA256 over `deviceUuid\nfeatureUuid\nfeatureName\ntimestamp\nnonce\npayloadJson`. Keep this canonical format aligned with `consumer` and `online-receiver`; do not remove the feature name from the signed material.
+
+## Repository Layout
+
+| Folder | Purpose |
+|---|---|
+| `dht-light/` | Temperature, humidity, and ambient-light sensor firmware. |
+| `airquality-pir/` | Air-quality and PIR motion sensor firmware. |
+| `barometer/` | Atmospheric-pressure sensor firmware. |
+| `ac-beko/` | MQTT-to-COOLIX infrared controller firmware for Beko air conditioners. |
+| `ac-lg/` | MQTT-to-LG infrared controller firmware for LG air conditioners. |
+| `thermostat/` | Offline-first MCP9600 thermostat firmware with persistent configuration, OLED support, hysteretic heating/cooling control, and safety-critical HEAT/COLD/FAN/PUMP outputs. Read `thermostat/README_THERMOSTAT.md` before modifying its control logic, GPIO behavior, or safety mechanisms. |
+| `thermostat-mcp9600-simulator/` | Standalone ESP-IDF firmware that makes a second ESP32-S3 emulate the MCP9600 I2C device for thermostat bench testing. Read `thermostat-mcp9600-simulator/README_THERMOSTAT_SIMULATOR.md` for wiring, configuration, build, flash, and usage instructions. |
+| `.github/` | GitHub Actions build and host-test workflow. |
+
+Each Arduino firmware folder contains its own `tests/` host-test project. Generated `build/` directories are local artifacts, not independent source projects. Do not apply Arduino CLI conventions, shared-module assumptions, or `build-all.sh` behavior to `thermostat-mcp9600-simulator`; follow its internal guide and use ESP-IDF commands instead.
 
 ## Quick Start
 
@@ -122,13 +137,16 @@ Each firmware provides separate test executables per module (`test_storage`, `te
 #define API_TOKEN "..."         // sent in both registration and MQTT publish payloads
 #define SSL true                // toggles TLS for HTTP and MQTT; adjust SERVER_PORT / MQTT_PORT accordingly
 #define SERVER_DOMAIN "..."     // admission service hostname
-#define SERVER_PORT 443        // 443 (SSL) or 80
+#define SERVER_PORT 443         // 443 (SSL) or 80
 #define SERVER_PATH "/admission/register"
 #define MQTT_URL "..."          // MQTT broker hostname
 #define MQTT_PORT 8883          // 8883 (SSL) or 1883
 #define MQTT_AUTH true          // enables username/password auth on MQTT connect
 #define MQTT_USERNAME "..."
 #define MQTT_PASSWORD "..."
+#define OPERATING_MODE 0        // thermostat only: 0 = cooling, 1 = heating
+#define COOLING_SHORT_RISE_CHECK_SECONDS 120 // one check after COLD starts
+#define COOLING_WIDE_RISE_CHECK_SECONDS 600  // recurring checks while COLD remains active
 ```
 
 ## Architecture (per firmware)
@@ -149,10 +167,22 @@ Each firmware provides separate test executables per module (`test_storage`, `te
 - Signed command replay protection: after HMAC, device identity, model, and feature validation pass, controllers claim the signed nonce in a 32-entry in-memory nonce cache and reject duplicates within `COMMAND_MAX_SKEW_SECS` before executing IR changes.
 
 **Thermostat** — hybrid sensor + controller:
-- Reads temperature (MCP9600 thermocouple via I2C) every 10s via alarm, publishes to MQTT
+- Reads temperature (MCP9600 thermocouple via I2C) every 5s via alarm, publishes to MQTT
 - Receives MQTT commands to set configuration (setpoint, tolerance)
+- Thermostat command contract: every configuration command contains the complete controller state, including both setpoint and tolerance. `set_configuration()` replaces the persisted `featureValues` array by design; partial controller-state commands are not supported.
 - Signed command replay protection: after HMAC, device identity, model, and feature validation pass, the thermostat claims the signed nonce in a 32-entry in-memory nonce cache and rejects duplicates within `COMMAND_MAX_SKEW_SECS` before changing configuration.
-- Drives physical GPIO outputs (HEAT, COLD, FAN, PUMP) using hysteretic control logic
+- `OPERATING_MODE` selects the only active operating mode at compile time: `0` = cooling and `1` = heating. Any other value must fail compilation.
+- In cooling builds, only COLD, PUMP, and FAN are written by the temperature loop; HEAT remains at its startup OFF level. In heating builds, only HEAT is written by the temperature loop; COLD, PUMP, and FAN remain at their startup OFF levels.
+- Thermostat state mapping is fixed: `-1` = cooling fault, `0` = sleep, `1` = cold, and `2` = heat. `OPERATING_MODE` is a separate compile-time operating mode and must not be confused with these runtime states. Keep the values aligned with the commented mode feature specification and any future mode telemetry.
+- Mode feature registration, `feature_values_set("mode", ...)`, and `publish_sensor_value("mode", ...)` are currently commented out. Until all three are restored together, runtime mode remains internal and must not be described as published telemetry.
+- Stateful hysteresis applies to the selected operating mode. It stops at the setpoint and, after its first cycle, restarts only at `setpoint + tolerance` for cooling or `setpoint - tolerance` for heating. Preserve `prev_thermostat_mode` across sleep samples.
+- Cooling builds must run the temperature-rise checks configured by `COOLING_SHORT_RISE_CHECK_SECONDS` and `COOLING_WIDE_RISE_CHECK_SECONDS`; both values must be greater than zero. COLD can drive hardware other than a Peltier, but the checks cover the case where a reversed or damaged Peltier heats the controlled fluid.
+- The short check runs once per continuous COLD cycle against the COLD-start temperature. The wide check starts from the same baseline, repeats while COLD stays active, and replaces its baseline after each successful window. Both reset after a normal stop at the setpoint. Checks occur on the first valid 5-second sample at or after each deadline.
+- Flat or decreasing temperature passes both rise checks; they do not enforce cooling performance. Any measured increase above the relevant baseline latches mode `-1`, disables COLD and PUMP, and requests FAN shutdown through its normal cooldown. The fault remains latched until reboot.
+- The rise checks assume trustworthy measurements and do not detect a frozen sensor because an unchanged stale value appears flat.
+- Host `test_main_ino` coverage must compile and run both `OPERATING_MODE=0` and `OPERATING_MODE=1` variants.
+- **HARDWARE SAFETY REQUIREMENT**: every HEAT, COLD, FAN, and PUMP control input must have an external resistor that holds it at the configured inactive level while the ESP32 pin is high-impedance during reset, bootloader execution, USB flashing, startup, or loss of ESP32 power. Use a pull-up for each active-low output and a pull-down for each active-high output. If any `*_ACTIVE_LOW` setting changes, review the corresponding hardware bias. Firmware initialization cannot replace this protection.
+- Output startup safety: `outputs_init()` must remain the first hardware action in `setup()`. It preloads each inactive ESP32 output latch with `gpio_set_level()` before `pinMode()` enables the driver.
 - Has an OLED display module (SSD1306 128x32 via I2C) — `display.cpp/h`
 - Extended `storage.cpp` with `storage_get_feature_values()` / `storage_set_feature_values()` for persisting controller state (`"featureValues"` key in Preferences)
 - **Offline-first design**: alarms are enabled in `setup()` *before* any WiFi attempt; the thermostat controls temperature immediately on boot regardless of network state

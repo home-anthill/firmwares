@@ -29,7 +29,7 @@ Ambient_Resolution ambientRes = RES_ZERO_POINT_0625;
 // easy to disturb with motor/relay noise. Keep a short history of accepted
 // values and reject sudden outliers, returning the last valid value instead.
 const size_t TEMP_VALID_HISTORY_SIZE = 10;
-const float TEMP_VALID_MAX_DEVIATION_PERCENT = 8.0f;
+const float TEMP_VALID_MAX_DEVIATION_PERCENT = 20.0f;
 float temp_valid_history[TEMP_VALID_HISTORY_SIZE] = {};
 size_t temp_valid_history_count = 0;
 size_t temp_valid_history_index = 0;

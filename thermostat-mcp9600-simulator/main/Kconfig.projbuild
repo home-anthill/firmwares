@@ -1,0 +1,13 @@
+menu "MCP9600 simulator"
+
+config MCP9600_SIMULATOR_OLED
+    bool "Enable optional SSD1306 OLED display"
+    default y
+    help
+        Show the simulated MCP9600 temperature on a 128x32 SSD1306 OLED at
+        address 0x3C. The OLED uses the independent I2C controller on GPIO 8
+        (SDA) and GPIO 9 (SCL). The simulator continues normally when the
+        display is enabled but not connected.
+
+endmenu
+

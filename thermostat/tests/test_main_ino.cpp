@@ -276,7 +276,9 @@ void         alarm_temperature_enable();
 void         alarm_online_enable();
 void         alarm_online_disable();
 void         outputs_init();
-void         outputs_all_off();
+#if OPERATING_MODE == 0
+void         cooling_safety_reset();
+#endif
 
 // Forward-declare mqtt_callback (defined in thermostat.ino, no header).
 void mqtt_callback(char* topic, uint8_t* payload, unsigned int length);
@@ -305,6 +307,8 @@ extern JsonArray    saved_features;
 extern char         saved_device_uuid[37];
 extern AlarmID_t    alarm_temp;
 extern AlarmID_t    alarm_online;
+extern int          thermostat_mode;
+extern int          prev_thermostat_mode;
 extern bool         fan_requested_active;
 extern unsigned long fan_turn_off_at_ms;
 
@@ -329,6 +333,11 @@ static constexpr uint8_t FAN_ON = outputLevel(FAN_ACTIVE_LOW, true);
 static constexpr uint8_t FAN_OFF = outputLevel(FAN_ACTIVE_LOW, false);
 static constexpr uint8_t PUMP_ON = outputLevel(PUMP_ACTIVE_LOW, true);
 static constexpr uint8_t PUMP_OFF = outputLevel(PUMP_ACTIVE_LOW, false);
+
+static constexpr int MODE_COOLING_FAULT = -1;
+static constexpr int MODE_SLEEP = 0;
+static constexpr int MODE_COLD = 1;
+static constexpr int MODE_HEAT = 2;
 
 // =============================================================================
 // Fixture
@@ -362,6 +371,11 @@ protected:
     conn_attempts = 0;
     conn_next_attempt_ms = 0;
     conn_cooldown_until_ms = 0;
+    thermostat_mode = MODE_SLEEP;
+    prev_thermostat_mode = MODE_SLEEP;
+#if OPERATING_MODE == 0
+    cooling_safety_reset();
+#endif
     fan_requested_active = false;
     fan_turn_off_at_ms = 0;
     display_feature_index = 0;
@@ -381,10 +395,19 @@ protected:
 TEST_F(MainInoTest, OutputsInitStartsAllOutputsOff) {
   outputs_init();
 
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_OFF);
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_OFF);
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_OFF);
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  FAN_OFF);
+  auto& gpio = GpioMockState::instance();
+  EXPECT_TRUE(gpio.preloaded_before_pin_mode[PIN_HEAT]);
+  EXPECT_TRUE(gpio.preloaded_before_pin_mode[PIN_COLD]);
+  EXPECT_TRUE(gpio.preloaded_before_pin_mode[PIN_PUMP]);
+  EXPECT_TRUE(gpio.preloaded_before_pin_mode[PIN_FAN]);
+  EXPECT_EQ(gpio.preloaded_values[PIN_HEAT], HEAT_OFF);
+  EXPECT_EQ(gpio.preloaded_values[PIN_COLD], COLD_OFF);
+  EXPECT_EQ(gpio.preloaded_values[PIN_PUMP], PUMP_OFF);
+  EXPECT_EQ(gpio.preloaded_values[PIN_FAN], FAN_OFF);
+  EXPECT_EQ(gpio.pin_values[PIN_HEAT], HEAT_OFF);
+  EXPECT_EQ(gpio.pin_values[PIN_COLD], COLD_OFF);
+  EXPECT_EQ(gpio.pin_values[PIN_PUMP], PUMP_OFF);
+  EXPECT_EQ(gpio.pin_values[PIN_FAN], FAN_OFF);
 }
 
 // =============================================================================
@@ -483,6 +506,9 @@ TEST_F(MainInoTest, BuildFeaturesHasCorrectFieldsPerEntry) {
   EXPECT_TRUE(arr[2]["enable"].as<bool>());
   EXPECT_EQ(arr[2]["order"].as<int>(), 3);
 
+  // Mode registration is temporarily commented out until the server accepts
+  // the remapped values, so online currently occupies the next order value.
+
   // online — sensor
   EXPECT_STREQ(arr[3]["type"].as<const char*>(), "sensor");
   EXPECT_STREQ(arr[3]["unit"].as<const char*>(), "-");
@@ -498,7 +524,7 @@ TEST_F(MainInoTest, BuildFeaturesIncludesAdmissionSpecs) {
   ASSERT_FALSE(setpointSpec.isNull());
   EXPECT_STREQ(setpointSpec["format"].as<const char*>(), "float");
   EXPECT_FLOAT_EQ(setpointSpec["min"].as<float>(), 10.0f);
-  EXPECT_FLOAT_EQ(setpointSpec["max"].as<float>(), 30.0f);
+  EXPECT_FLOAT_EQ(setpointSpec["max"].as<float>(), 35.0f);
   EXPECT_FLOAT_EQ(setpointSpec["step"].as<float>(), 0.5f);
   EXPECT_TRUE(setpointSpec["list"].isNull());
 
@@ -625,6 +651,12 @@ TEST_F(MainInoTest, TemperatureAlarmCanBeEnabledWithoutOnlineAlarm) {
   EXPECT_FALSE(Alarm.isEnabled(alarm_online));
 }
 
+TEST_F(MainInoTest, TemperatureAlarmRunsEveryFiveSeconds) {
+  alarms_init();
+
+  EXPECT_EQ(Alarm.period(alarm_temp), 5UL);
+}
+
 TEST_F(MainInoTest, MqttConnectEnablesOnlineAlarmAndPublishesInitialOnline) {
   alarms_init();
   strncpy(saved_device_uuid, "device-uuid-test-0000-000000000000", 36);
@@ -655,76 +687,310 @@ TEST_F(MainInoTest, MqttDropDisablesOnlineAlarm) {
 // read_temp_sensor_value — hysteretic GPIO control
 // =============================================================================
 
-TEST_F(MainInoTest, ReadTempTooHotActivatesCooling) {
-  // temp(28) > setpoint(20) + tolerance(5) = 25 → cooling branch
+#if OPERATING_MODE == 0
+
+TEST_F(MainInoTest, ReadTempTooHotActivatesCoolingOnly) {
+  // temp(28) > setpoint(20) starts cooling.
   g_temp      = 28.0f;
   g_setpoint  = 20.0f;
   g_tolerance =  5.0f;
 
   read_temp_sensor_value();
 
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_OFF);
+  EXPECT_EQ(thermostat_mode, MODE_COLD);
+  EXPECT_EQ(GpioMockState::instance().pin_values.count(PIN_HEAT), 0u);
   EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_ON);
   EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_ON);
   EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  FAN_ON);
 }
 
-TEST_F(MainInoTest, ReadTempTooColdActivatesHeating) {
-  // temp(12) < setpoint(20) - tolerance(5) = 15 → heating branch
+TEST_F(MainInoTest, ReadTempTooColdLeavesCoolingOutputsOff) {
   g_temp      = 12.0f;
   g_setpoint  = 20.0f;
   g_tolerance =  5.0f;
 
   read_temp_sensor_value();
 
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_ON);
+  EXPECT_EQ(thermostat_mode, MODE_SLEEP);
+  EXPECT_EQ(GpioMockState::instance().pin_values.count(PIN_HEAT), 0u);
   EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_OFF);
   EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_OFF);
   EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  FAN_OFF);
 }
 
-TEST_F(MainInoTest, ReadTempInRangeTurnsAllOff) {
-  // temp(20) in [15, 25] → idle branch
+TEST_F(MainInoTest, ReadTempExactlyAtUpperBoundStartsCooling) {
+  g_temp      = 25.0f;
+  g_setpoint  = 20.0f;
+  g_tolerance =  5.0f;
+
+  read_temp_sensor_value();
+
+  EXPECT_EQ(thermostat_mode, MODE_COLD);
+  EXPECT_EQ(GpioMockState::instance().pin_values.count(PIN_HEAT), 0u);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_ON);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_ON);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  FAN_ON);
+}
+
+TEST_F(MainInoTest, CoolingStopsAtSetpointAndWaitsForUpperToleranceToRestart) {
+  g_setpoint  = 20.0f;
+  g_tolerance =  5.0f;
+
+  g_temp = 22.0f;
+  read_temp_sensor_value();
+
+  EXPECT_EQ(thermostat_mode, MODE_COLD);
+  EXPECT_EQ(prev_thermostat_mode, MODE_COLD);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_ON);
+
+  GpioMockState::reset();
+  g_temp = 22.0f;
+  read_temp_sensor_value();
+
+  EXPECT_EQ(thermostat_mode, MODE_COLD);
+  EXPECT_EQ(prev_thermostat_mode, MODE_COLD);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_ON);
+
+  GpioMockState::reset();
+  g_temp = 20.0f;
+  read_temp_sensor_value();
+
+  EXPECT_EQ(thermostat_mode, MODE_SLEEP);
+  EXPECT_EQ(prev_thermostat_mode, MODE_COLD);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_OFF);
+
+  GpioMockState::reset();
+  g_temp = 22.0f;
+  read_temp_sensor_value();
+
+  EXPECT_EQ(thermostat_mode, MODE_SLEEP);
+  EXPECT_EQ(prev_thermostat_mode, MODE_COLD);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_OFF);
+
+  GpioMockState::reset();
+  g_temp = 24.0f;
+  read_temp_sensor_value();
+
+  EXPECT_EQ(thermostat_mode, MODE_SLEEP);
+  EXPECT_EQ(prev_thermostat_mode, MODE_COLD);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_OFF);
+
+  GpioMockState::reset();
+  g_temp = 25.0f;
+  read_temp_sensor_value();
+
+  EXPECT_EQ(thermostat_mode, MODE_COLD);
+  EXPECT_EQ(prev_thermostat_mode, MODE_COLD);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_ON);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_ON);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN], FAN_ON);
+}
+
+TEST_F(MainInoTest, ReadTempAtSetpointKeepsCoolingOutputsOff) {
   g_temp      = 20.0f;
   g_setpoint  = 20.0f;
   g_tolerance =  5.0f;
 
   read_temp_sensor_value();
 
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_OFF);
+  EXPECT_EQ(thermostat_mode, MODE_SLEEP);
+  EXPECT_EQ(GpioMockState::instance().pin_values.count(PIN_HEAT), 0u);
   EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_OFF);
   EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_OFF);
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  FAN_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN], FAN_OFF);
 }
 
-TEST_F(MainInoTest, ReadTempExactlyAtUpperBoundIsInRange) {
-  // temp == setpoint + tolerance → NOT in "too hot" branch (condition is >)
-  g_temp      = 25.0f;  // exactly setpoint(20) + tolerance(5)
+TEST_F(MainInoTest, CoolingShortCheckAllowsFlatTemperature) {
+  g_temp = 28.0f;
+  read_temp_sensor_value();
+
+  mock_advance_millis(COOLING_SHORT_RISE_CHECK_SECONDS * 1000UL);
+  GpioMockState::reset();
+  g_temp = 28.0f;
+  read_temp_sensor_value();
+
+  EXPECT_EQ(thermostat_mode, MODE_COLD);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_ON);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_ON);
+}
+
+TEST_F(MainInoTest, CoolingShortCheckFaultsWhenTemperatureRises) {
+  g_temp = 28.0f;
+  read_temp_sensor_value();
+
+  mock_advance_millis(COOLING_SHORT_RISE_CHECK_SECONDS * 1000UL);
+  GpioMockState::reset();
+  g_temp = 28.1f;
+  read_temp_sensor_value();
+
+  EXPECT_EQ(thermostat_mode, MODE_COOLING_FAULT);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN], FAN_ON);
+}
+
+TEST_F(MainInoTest, CoolingWideCheckFaultsWhenTemperatureRises) {
+  g_temp = 28.0f;
+  read_temp_sensor_value();
+
+  mock_advance_millis(COOLING_SHORT_RISE_CHECK_SECONDS * 1000UL);
+  g_temp = 27.0f;
+  read_temp_sensor_value();
+
+  mock_set_millis(COOLING_WIDE_RISE_CHECK_SECONDS * 1000UL);
+  GpioMockState::reset();
+  g_temp = 28.1f;
+  read_temp_sensor_value();
+
+  EXPECT_EQ(thermostat_mode, MODE_COOLING_FAULT);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_OFF);
+}
+
+TEST_F(MainInoTest, CoolingWideCheckAllowsFlatTemperature) {
+  g_temp = 28.0f;
+  read_temp_sensor_value();
+
+  mock_advance_millis(COOLING_SHORT_RISE_CHECK_SECONDS * 1000UL);
+  g_temp = 28.0f;
+  read_temp_sensor_value();
+
+  mock_set_millis(COOLING_WIDE_RISE_CHECK_SECONDS * 1000UL);
+  GpioMockState::reset();
+  read_temp_sensor_value();
+
+  EXPECT_EQ(thermostat_mode, MODE_COLD);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_ON);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_ON);
+}
+
+TEST_F(MainInoTest, CoolingFaultStaysLatchedAndServicesFanCooldown) {
+  g_temp = 28.0f;
+  read_temp_sensor_value();
+
+  mock_advance_millis(COOLING_SHORT_RISE_CHECK_SECONDS * 1000UL);
+  g_temp = 29.0f;
+  read_temp_sensor_value();
+  ASSERT_EQ(thermostat_mode, MODE_COOLING_FAULT);
+
+  mock_advance_millis(FAN_TURN_OFF_DELAY_SECONDS * 1000UL);
+  GpioMockState::reset();
+  g_temp = 19.0f;
+  read_temp_sensor_value();
+
+  EXPECT_EQ(thermostat_mode, MODE_COOLING_FAULT);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN], FAN_OFF);
+}
+
+#else
+
+TEST_F(MainInoTest, ReadTempTooColdActivatesHeatingOnly) {
+  g_temp      = 12.0f;
   g_setpoint  = 20.0f;
   g_tolerance =  5.0f;
 
   read_temp_sensor_value();
 
-  // Falls into the idle (else) branch.
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_OFF);
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_OFF);
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_OFF);
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  FAN_OFF);
+  EXPECT_EQ(thermostat_mode, MODE_HEAT);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_ON);
+  EXPECT_EQ(GpioMockState::instance().pin_values.count(PIN_COLD), 0u);
+  EXPECT_EQ(GpioMockState::instance().pin_values.count(PIN_PUMP), 0u);
+  EXPECT_EQ(GpioMockState::instance().pin_values.count(PIN_FAN), 0u);
 }
 
-TEST_F(MainInoTest, ReadTempExactlyAtLowerBoundIsInRange) {
-  // temp == setpoint - tolerance → NOT in "too cold" branch (condition is <)
-  g_temp      = 15.0f;  // exactly setpoint(20) - tolerance(5)
+TEST_F(MainInoTest, ReadTempTooHotLeavesHeatingOutputOff) {
+  g_temp      = 28.0f;
   g_setpoint  = 20.0f;
   g_tolerance =  5.0f;
 
   read_temp_sensor_value();
 
+  EXPECT_EQ(thermostat_mode, MODE_SLEEP);
   EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_OFF);
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_OFF);
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_OFF);
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],  FAN_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values.count(PIN_COLD), 0u);
+  EXPECT_EQ(GpioMockState::instance().pin_values.count(PIN_PUMP), 0u);
+  EXPECT_EQ(GpioMockState::instance().pin_values.count(PIN_FAN), 0u);
 }
+
+TEST_F(MainInoTest, ReadTempExactlyAtLowerBoundStartsHeating) {
+  g_temp      = 15.0f;
+  g_setpoint  = 20.0f;
+  g_tolerance =  5.0f;
+
+  read_temp_sensor_value();
+
+  EXPECT_EQ(thermostat_mode, MODE_HEAT);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_ON);
+  EXPECT_EQ(GpioMockState::instance().pin_values.count(PIN_COLD), 0u);
+}
+
+TEST_F(MainInoTest, HeatingStopsAtSetpointAndWaitsForLowerToleranceToRestart) {
+  g_setpoint  = 20.0f;
+  g_tolerance =  5.0f;
+
+  g_temp = 18.0f;
+  read_temp_sensor_value();
+
+  EXPECT_EQ(thermostat_mode, MODE_HEAT);
+  EXPECT_EQ(prev_thermostat_mode, MODE_HEAT);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_ON);
+
+  GpioMockState::reset();
+  g_temp = 18.0f;
+  read_temp_sensor_value();
+
+  EXPECT_EQ(thermostat_mode, MODE_HEAT);
+  EXPECT_EQ(prev_thermostat_mode, MODE_HEAT);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_ON);
+
+  GpioMockState::reset();
+  g_temp = 20.0f;
+  read_temp_sensor_value();
+
+  EXPECT_EQ(thermostat_mode, MODE_SLEEP);
+  EXPECT_EQ(prev_thermostat_mode, MODE_HEAT);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_OFF);
+
+  GpioMockState::reset();
+  g_temp = 18.0f;
+  read_temp_sensor_value();
+
+  EXPECT_EQ(thermostat_mode, MODE_SLEEP);
+  EXPECT_EQ(prev_thermostat_mode, MODE_HEAT);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_OFF);
+
+  GpioMockState::reset();
+  g_temp = 16.0f;
+  read_temp_sensor_value();
+
+  EXPECT_EQ(thermostat_mode, MODE_SLEEP);
+  EXPECT_EQ(prev_thermostat_mode, MODE_HEAT);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_OFF);
+
+  GpioMockState::reset();
+  g_temp = 15.0f;
+  read_temp_sensor_value();
+
+  EXPECT_EQ(thermostat_mode, MODE_HEAT);
+  EXPECT_EQ(prev_thermostat_mode, MODE_HEAT);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_ON);
+}
+
+TEST_F(MainInoTest, ReadTempAtSetpointKeepsHeatingOutputOff) {
+  g_temp      = 20.0f;
+  g_setpoint  = 20.0f;
+  g_tolerance =  5.0f;
+
+  read_temp_sensor_value();
+
+  EXPECT_EQ(thermostat_mode, MODE_SLEEP);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values.count(PIN_COLD), 0u);
+}
+
+#endif
 
 // =============================================================================
 // mqtt_callback — delegates to set_configuration

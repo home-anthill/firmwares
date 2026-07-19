@@ -15,20 +15,23 @@ class TimeAlarmsClass {
 public:
   void reset() {
     next_id = 0;
-    for (bool& value : enabled) {
-      value = false;
+    for (uint8_t i = 0; i < 16; i++) {
+      enabled[i] = false;
+      periods[i] = 0;
     }
   }
 
-  AlarmID_t timerRepeat(unsigned long /*period*/, void (* /*callback*/)()) {
+  AlarmID_t timerRepeat(unsigned long period, void (* /*callback*/)()) {
     AlarmID_t id = next_id++;
     enabled[id] = true;
+    periods[id] = period;
     return id;
   }
 
   void disable(AlarmID_t id) { enabled[id] = false; }
   void enable(AlarmID_t id)  { enabled[id] = true; }
   bool isEnabled(AlarmID_t id) const { return enabled[id]; }
+  unsigned long period(AlarmID_t id) const { return periods[id]; }
 
   // Alarm.delay() is the TimeAlarms-aware equivalent of delay().
   void delay(unsigned long /*ms*/) {}
@@ -36,6 +39,7 @@ public:
 private:
   AlarmID_t next_id{0};
   bool enabled[16] = {};
+  unsigned long periods[16] = {};
 };
 
 inline TimeAlarmsClass Alarm;

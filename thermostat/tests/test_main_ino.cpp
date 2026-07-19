@@ -826,7 +826,8 @@ TEST_F(MainInoTest, CoolingShortCheckFaultsWhenTemperatureRises) {
   EXPECT_EQ(thermostat_mode, MODE_COOLING_FAULT);
   EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_OFF);
   EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_OFF);
-  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN], FAN_ON);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],
+            FAN_TURN_OFF_DELAY_SECONDS > 0 ? FAN_ON : FAN_OFF);
 }
 
 TEST_F(MainInoTest, CoolingWideCheckFaultsWhenTemperatureRises) {

@@ -489,7 +489,7 @@ uint8_t output_level(bool active_low, bool active) {
 #if OPERATING_MODE == 0
 void cooling_safety_start(float temp) {
   const unsigned long now = millis();
-  Serial.println("cooling_safety_start - now = " + String(now) + ", temp = " + String(temp));
+  Serial.printf("cooling_safety_start - now = %lu, temp = %.2f\n", now, temp);
 
   cooling_safety_monitoring = true;
   cooling_short_rise_check_done = false;
@@ -523,7 +523,7 @@ void cooling_safety_reset() {
  *         to latch the cooling fault and stop the cooling outputs.
  */
 bool cooling_safety_temperature_not_rising(float temp) {
-  Serial.println("cooling_safety_temperature_not_rising - temp = " + String(temp));
+  Serial.printf("cooling_safety_temperature_not_rising - temp = %.2f\n", temp);
   if (!cooling_safety_monitoring) {
     return true;
   }

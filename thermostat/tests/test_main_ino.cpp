@@ -550,7 +550,7 @@ TEST_F(MainInoTest, BuildFeaturesIncludesAdmissionSpecs) {
 
   JsonObject modeSpec = arr[3]["spec"].as<JsonObject>();
   ASSERT_FALSE(modeSpec.isNull());
-  EXPECT_STREQ(modeSpec["format"].as<const char*>(), "int");
+  EXPECT_STREQ(modeSpec["format"].as<const char*>(), "float");
   EXPECT_FLOAT_EQ(modeSpec["min"].as<float>(), -1.0f);
   EXPECT_FLOAT_EQ(modeSpec["max"].as<float>(), 2.0f);
   EXPECT_FLOAT_EQ(modeSpec["step"].as<float>(), 1.0f);

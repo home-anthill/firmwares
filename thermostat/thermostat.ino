@@ -324,10 +324,10 @@ JsonDocument buildFeatures() {
   mode["order"] = 4;
   mode["unit"] = "-";
   JsonObject modeSpec = mode["spec"].to<JsonObject>();
-  modeSpec["format"] = "int";
-  modeSpec["min"] = -1; // fault
-  modeSpec["max"] = 2;  // heating
-  modeSpec["step"] = 1;
+  modeSpec["format"] = "float";
+  modeSpec["min"] = -1.0; // fault
+  modeSpec["max"] = 2.0;  // heating
+  modeSpec["step"] = 1.0;
 
   JsonObject online = array.add<JsonObject>();
   online["type"] = "sensor";

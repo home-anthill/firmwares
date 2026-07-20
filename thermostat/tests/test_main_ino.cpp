@@ -473,15 +473,16 @@ TEST_F(MainInoTest, GetFeatureUuidByNameTruncatesUuidToBufferSize) {
 // buildFeatures
 // =============================================================================
 
-TEST_F(MainInoTest, BuildFeaturesReturnsFourFeatures) {
+TEST_F(MainInoTest, BuildFeaturesReturnsFiveFeatures) {
   JsonDocument result = buildFeatures();
   JsonArray    arr    = result.as<JsonArray>();
 
-  ASSERT_EQ(arr.size(), 4u);
+  ASSERT_EQ(arr.size(), 5u);
   EXPECT_STREQ(arr[0]["name"].as<const char*>(), "setpoint");
   EXPECT_STREQ(arr[1]["name"].as<const char*>(), "tolerance");
   EXPECT_STREQ(arr[2]["name"].as<const char*>(), "temperature");
-  EXPECT_STREQ(arr[3]["name"].as<const char*>(), "online");
+  EXPECT_STREQ(arr[3]["name"].as<const char*>(), "mode");
+  EXPECT_STREQ(arr[4]["name"].as<const char*>(), "online");
 }
 
 TEST_F(MainInoTest, BuildFeaturesHasCorrectFieldsPerEntry) {
@@ -506,14 +507,17 @@ TEST_F(MainInoTest, BuildFeaturesHasCorrectFieldsPerEntry) {
   EXPECT_TRUE(arr[2]["enable"].as<bool>());
   EXPECT_EQ(arr[2]["order"].as<int>(), 3);
 
-  // Mode registration is temporarily commented out until the server accepts
-  // the remapped values, so online currently occupies the next order value.
-
-  // online — sensor
+  // mode — sensor
   EXPECT_STREQ(arr[3]["type"].as<const char*>(), "sensor");
   EXPECT_STREQ(arr[3]["unit"].as<const char*>(), "-");
   EXPECT_TRUE(arr[3]["enable"].as<bool>());
   EXPECT_EQ(arr[3]["order"].as<int>(), 4);
+
+  // online — sensor
+  EXPECT_STREQ(arr[4]["type"].as<const char*>(), "sensor");
+  EXPECT_STREQ(arr[4]["unit"].as<const char*>(), "-");
+  EXPECT_TRUE(arr[4]["enable"].as<bool>());
+  EXPECT_EQ(arr[4]["order"].as<int>(), 5);
 }
 
 TEST_F(MainInoTest, BuildFeaturesIncludesAdmissionSpecs) {
@@ -544,7 +548,15 @@ TEST_F(MainInoTest, BuildFeaturesIncludesAdmissionSpecs) {
   EXPECT_FLOAT_EQ(temperatureSpec["step"].as<float>(), 0.01f);
   EXPECT_TRUE(temperatureSpec["list"].isNull());
 
-  JsonObject onlineSpec = arr[3]["spec"].as<JsonObject>();
+  JsonObject modeSpec = arr[3]["spec"].as<JsonObject>();
+  ASSERT_FALSE(modeSpec.isNull());
+  EXPECT_STREQ(modeSpec["format"].as<const char*>(), "int");
+  EXPECT_FLOAT_EQ(modeSpec["min"].as<float>(), -1.0f);
+  EXPECT_FLOAT_EQ(modeSpec["max"].as<float>(), 2.0f);
+  EXPECT_FLOAT_EQ(modeSpec["step"].as<float>(), 1.0f);
+  EXPECT_TRUE(modeSpec["list"].isNull());
+
+  JsonObject onlineSpec = arr[4]["spec"].as<JsonObject>();
   ASSERT_FALSE(onlineSpec.isNull());
   EXPECT_STREQ(onlineSpec["format"].as<const char*>(), "bool");
   EXPECT_TRUE(onlineSpec["list"].isNull());
@@ -569,14 +581,14 @@ TEST_F(MainInoTest, ReadTempSkipsEverythingWhenNan) {
 // =============================================================================
 
 TEST_F(MainInoTest, ReadTempCachesDisplayValueWithoutForcingRefresh) {
-  g_temp = 21.5f;
+  g_temp = 20.0f;
 
   read_temp_sensor_value();
 
   EXPECT_EQ(UpdateDisplayCapture::instance().call_count, 0);
   ASSERT_EQ(FeatureValuesCapture::instance().values.size(), 1u);
   EXPECT_EQ(FeatureValuesCapture::instance().values[0].type, "temperature");
-  EXPECT_FLOAT_EQ(FeatureValuesCapture::instance().values[0].value, 21.5f);
+  EXPECT_FLOAT_EQ(FeatureValuesCapture::instance().values[0].value, 20.0f);
 }
 
 // =============================================================================
@@ -594,6 +606,33 @@ TEST_F(MainInoTest, ReadTempPublishesWhenConnectedAndFeatureFound) {
   ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 1u);
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].type, "temperature");
   EXPECT_FLOAT_EQ(MqttNotifyCapture::instance().calls[0].value, 22.0f);
+}
+
+TEST_F(MainInoTest, ReadTempPublishesModeOnlyWhenModeChanges) {
+  MqttMockState::instance().connected_val = true;
+  strncpy(saved_device_uuid, "device-uuid-test-0000-000000000000", 36);
+  addFeature("temperature", "tm-uuid-0000-0000-000000000003");
+  addFeature("mode", "mode-uuid-0000-0000-00000000004");
+#if OPERATING_MODE == 0
+  g_temp = 28.0f;
+  const int expected_mode = MODE_COLD;
+#else
+  g_temp = 12.0f;
+  const int expected_mode = MODE_HEAT;
+#endif
+
+  read_temp_sensor_value();
+
+  ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 2u);
+  EXPECT_EQ(MqttNotifyCapture::instance().calls[0].type, "temperature");
+  EXPECT_EQ(MqttNotifyCapture::instance().calls[1].type, "mode");
+  EXPECT_FLOAT_EQ(MqttNotifyCapture::instance().calls[1].value,
+                  static_cast<float>(expected_mode));
+
+  read_temp_sensor_value();
+
+  ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 3u);
+  EXPECT_EQ(MqttNotifyCapture::instance().calls[2].type, "temperature");
 }
 
 TEST_F(MainInoTest, ReadTempSkipsPublishWhenNotConnected) {
@@ -1049,11 +1088,17 @@ TEST_F(MainInoTest, TemperatureReadUpdatesCacheAfterCommandMessage) {
   g_temp = 19.25f;
   read_temp_sensor_value();
 
-  ASSERT_EQ(FeatureValuesCapture::instance().values.size(), 3u);
+  const size_t expected_value_count = OPERATING_MODE == 1 ? 4u : 3u;
+  ASSERT_EQ(FeatureValuesCapture::instance().values.size(), expected_value_count);
   EXPECT_EQ(FeatureValuesCapture::instance().values[0].type, "setpoint");
   EXPECT_EQ(FeatureValuesCapture::instance().values[1].type, "tolerance");
   EXPECT_EQ(FeatureValuesCapture::instance().values[2].type, "temperature");
   EXPECT_FLOAT_EQ(FeatureValuesCapture::instance().values[2].value, 19.25f);
+#if OPERATING_MODE == 1
+  EXPECT_EQ(FeatureValuesCapture::instance().values[3].type, "mode");
+  EXPECT_FLOAT_EQ(FeatureValuesCapture::instance().values[3].value,
+                  static_cast<float>(MODE_HEAT));
+#endif
 }
 
 TEST_F(MainInoTest, WifiConnectedSyncsTimeBeforeRegistrationOrMqtt) {

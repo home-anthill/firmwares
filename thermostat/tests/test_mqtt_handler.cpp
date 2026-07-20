@@ -69,6 +69,15 @@ TEST_F(MqttHandlerTest, NotifyValuePayloadKeepsFloatIntegerDecimalForRustCanonic
             std::string::npos);
 }
 
+TEST_F(MqttHandlerTest, NotifyModeValuePayloadUsesFloatRepresentation) {
+  mqtt_notify_value("dev-uuid", "feat-uuid", "mode", -1.0f);
+
+  EXPECT_NE(MqttMockState::instance().last_publish_payload.find(R"("payload":{"value":-1.0})"),
+            std::string::npos);
+  EXPECT_EQ(MqttMockState::instance().last_publish_payload.find(R"("payload":{"value":-1})"),
+            std::string::npos);
+}
+
 TEST_F(MqttHandlerTest, NotifyValuePayloadTrimsUnneededTrailingDecimalZeros) {
   mqtt_notify_value("dev-uuid", "feat-uuid", "temperature", 22.2500f);
 

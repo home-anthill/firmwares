@@ -329,8 +329,6 @@ JsonDocument buildFeatures() {
   modeSpec["max"] = 2;  // heating
   modeSpec["step"] = 1;
 
-  // While mode remains disabled, online uses order 4. Move online to order 5
-  // when the mode feature and its remapped values are restored.
   JsonObject online = array.add<JsonObject>();
   online["type"] = "sensor";
   online["name"] = "online";
@@ -361,6 +359,8 @@ void read_temp_sensor_value() {
   if (isnan(temp)) {
     Serial.println("read_temp_sensor_value - error reading temperature!");
   } else {
+    const int mode_before_update = thermostat_mode;
+
     feature_values_set("temperature", temp);
     publish_sensor_value("temperature", temp);
 
@@ -435,8 +435,10 @@ void read_temp_sensor_value() {
     }
 #endif
 
-    feature_values_set("mode", thermostat_mode);
-    publish_sensor_value("mode", thermostat_mode);
+    if (thermostat_mode != mode_before_update) {
+      feature_values_set("mode", thermostat_mode);
+      publish_sensor_value("mode", static_cast<float>(thermostat_mode));
+    }
   }
 }
 
@@ -448,7 +450,7 @@ void send_online_status() {
   }
 
   const char* feature_name = "online";
-  publish_sensor_value(feature_name, 1);
+  publish_sensor_value(feature_name, 1.0f);
 }
 
 void publish_initial_values() {

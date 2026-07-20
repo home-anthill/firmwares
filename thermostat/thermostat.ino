@@ -317,17 +317,17 @@ JsonDocument buildFeatures() {
   temperatureSpec["max"] = 200; // TODO is this right???
   temperatureSpec["step"] = 0.01; // TODO is this right???
 
-  // JsonObject mode = array.add<JsonObject>();
-  // mode["type"] = "sensor";
-  // mode["name"] = "mode";
-  // mode["enable"] = true;
-  // mode["order"] = 4;
-  // mode["unit"] = "-";
-  // JsonObject modeSpec = mode["spec"].to<JsonObject>();
-  // modeSpec["format"] = "int";
-  // modeSpec["min"] = -1; // cooling fault
-  // modeSpec["max"] = 2;  // heating
-  // modeSpec["step"] = 1;
+  JsonObject mode = array.add<JsonObject>();
+  mode["type"] = "sensor";
+  mode["name"] = "mode";
+  mode["enable"] = true;
+  mode["order"] = 4;
+  mode["unit"] = "-";
+  JsonObject modeSpec = mode["spec"].to<JsonObject>();
+  modeSpec["format"] = "int";
+  modeSpec["min"] = -1; // fault
+  modeSpec["max"] = 2;  // heating
+  modeSpec["step"] = 1;
 
   // While mode remains disabled, online uses order 4. Move online to order 5
   // when the mode feature and its remapped values are restored.
@@ -335,7 +335,7 @@ JsonDocument buildFeatures() {
   online["type"] = "sensor";
   online["name"] = "online";
   online["enable"] = true;
-  online["order"] = 4;
+  online["order"] = 5;
   online["unit"] = "-";
   JsonObject onlineSpec = online["spec"].to<JsonObject>();
   onlineSpec["format"] = "bool";
@@ -435,9 +435,8 @@ void read_temp_sensor_value() {
     }
 #endif
 
-    // TODO restore this
-    // feature_values_set("mode", thermostat_mode);
-    // publish_sensor_value("mode", thermostat_mode);
+    feature_values_set("mode", thermostat_mode);
+    publish_sensor_value("mode", thermostat_mode);
   }
 }
 

@@ -39,6 +39,15 @@ TEST_F(MqttHandlerTest, NotifyValueUsesOnlineTopicForOnlineType) {
             "online/dev-uuid/features/feat-uuid");
 }
 
+TEST_F(MqttHandlerTest, NotifyAlarmUsesGenericAlarmTopic) {
+  mqtt_notify_alarm("dev-uuid", "feat-uuid", "motion", "motion", 1.0f);
+
+  EXPECT_EQ(MqttMockState::instance().last_publish_topic,
+            "alarms/dev-uuid/features/feat-uuid/motion");
+  EXPECT_NE(MqttMockState::instance().last_publish_payload.find(R"("payload":{"value":1})"),
+            std::string::npos);
+}
+
 // ===========================================================================
 // mqtt_notify_value — payload structure
 // ===========================================================================

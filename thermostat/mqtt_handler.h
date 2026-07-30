@@ -14,3 +14,6 @@ void mqtt_connect(const char* uuid);
 bool mqtt_try_connect_once(const char* uuid);
 
 void mqtt_notify_value(const char* device_uuid, const char* feature_uuid, const char* type, float value);
+
+void mqtt_notify_alarm(const char* device_uuid, const char* feature_uuid, const char* feature_name,
+                       const char* alarm_type, float value);

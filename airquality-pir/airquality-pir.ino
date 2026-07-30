@@ -98,6 +98,9 @@ void read_and_send_pir_value() {
     char feature_uuid[37];
     if (get_feature_uuid_by_name(feature_uuid, sizeof(feature_uuid), feature_name)) {
       mqtt_notify_value(saved_device_uuid, feature_uuid, feature_name, new_value);
+      if (new_value == 1) {
+        mqtt_notify_alarm(saved_device_uuid, feature_uuid, feature_name, "motion", new_value);
+      }
     } else {
       Serial.println("read_and_send_pir_value - feature uuid not found for motion");
     }
@@ -126,7 +129,7 @@ void publish_initial_values() {
 void alarms_init() {
   alarm_airquality = Alarm.timerRepeat(50, read_and_send_airquality_value);
   Alarm.disable(alarm_airquality);
-  alarm_pir = Alarm.timerRepeat(30, read_and_send_pir_value);
+  alarm_pir = Alarm.timerRepeat(1, read_and_send_pir_value);
   Alarm.disable(alarm_pir);
   alarm_online = Alarm.timerRepeat(60, send_online_status);
   Alarm.disable(alarm_online);
@@ -316,7 +319,7 @@ void loop() {
 
   // Defense in depth: mqtt_client.loop() returns false if the connection is
   // broken (e.g. broker restarted). For sensors, publish failure already
-  // triggers disconnect(), but that only fires at the next alarm tick (30-50 s).
+  // triggers disconnect(), but that only fires at the next sensor alarm tick.
   // Checking here catches stale connections via PINGREQ timeout (~15 s)
   // without waiting for the next publish.
   if (!mqtt_client.loop()) {

@@ -126,6 +126,35 @@ void mqtt_notify_value(const char* device_uuid, const char* feature_uuid,
   });
 }
 
+struct AlarmCall {
+  std::string device_uuid;
+  std::string feature_uuid;
+  std::string feature_name;
+  std::string alarm_type;
+  float value;
+};
+
+struct MqttAlarmCapture {
+  std::vector<AlarmCall> calls;
+
+  static MqttAlarmCapture& instance() {
+    static MqttAlarmCapture s;
+    return s;
+  }
+  static void reset() { instance().calls.clear(); }
+};
+
+void mqtt_notify_alarm(const char* device_uuid, const char* feature_uuid,
+                       const char* feature_name, const char* alarm_type, float value) {
+  MqttAlarmCapture::instance().calls.push_back({
+    device_uuid ? device_uuid : "",
+    feature_uuid ? feature_uuid : "",
+    feature_name ? feature_name : "",
+    alarm_type ? alarm_type : "",
+    value
+  });
+}
+
 // --- storage ----------------------------------------------------------------
 
 void   storage_get_features(JsonArray /*arr*/)     {}
@@ -271,6 +300,7 @@ bool         get_feature_uuid_by_name(char* featureUuid, size_t max_len, const c
 JsonDocument buildFeatures();
 void         read_temp_sensor_value();
 void         send_online_status();
+void         publish_alarm(const char* feature_name, const char* alarm_type, float value);
 void         alarms_init();
 void         alarm_temperature_enable();
 void         alarm_online_enable();
@@ -353,6 +383,7 @@ protected:
 
     // Reset stubs.
     MqttNotifyCapture::reset();
+    MqttAlarmCapture::reset();
     UpdateDisplayCapture::reset();
     FeatureValuesCapture::reset();
     SetConfigCapture::reset();
@@ -681,6 +712,31 @@ TEST_F(MainInoTest, SendOnlinePublishesWhenConnectedAndFeatureFound) {
   EXPECT_FLOAT_EQ(MqttNotifyCapture::instance().calls[0].value, 1.0f);
 }
 
+TEST_F(MainInoTest, PublishAlarmSkipsWhenMqttIsDisconnected) {
+  MqttMockState::instance().connected_val = false;
+  strncpy(saved_device_uuid, "device-uuid-test-0000-000000000000", 36);
+  addFeature("mode", "mode-uuid-0000-0000-000000000005");
+
+  publish_alarm("mode", "thermostat-mode-error", -1.0f);
+
+  EXPECT_EQ(MqttAlarmCapture::instance().calls.size(), 0u);
+}
+
+TEST_F(MainInoTest, PublishAlarmUsesRegisteredModeFeatureWhenConnected) {
+  MqttMockState::instance().connected_val = true;
+  strncpy(saved_device_uuid, "device-uuid-test-0000-000000000000", 36);
+  addFeature("mode", "mode-uuid-0000-0000-000000000005");
+
+  publish_alarm("mode", "thermostat-mode-error", -1.0f);
+
+  ASSERT_EQ(MqttAlarmCapture::instance().calls.size(), 1u);
+  EXPECT_EQ(MqttAlarmCapture::instance().calls[0].feature_uuid,
+            "mode-uuid-0000-0000-000000000005");
+  EXPECT_EQ(MqttAlarmCapture::instance().calls[0].feature_name, "mode");
+  EXPECT_EQ(MqttAlarmCapture::instance().calls[0].alarm_type, "thermostat-mode-error");
+  EXPECT_FLOAT_EQ(MqttAlarmCapture::instance().calls[0].value, -1.0f);
+}
+
 TEST_F(MainInoTest, TemperatureAlarmCanBeEnabledWithoutOnlineAlarm) {
   alarms_init();
 
@@ -867,6 +923,24 @@ TEST_F(MainInoTest, CoolingShortCheckFaultsWhenTemperatureRises) {
   EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_OFF);
   EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],
             FAN_TURN_OFF_DELAY_SECONDS > 0 ? FAN_ON : FAN_OFF);
+}
+
+TEST_F(MainInoTest, CoolingFaultPublishesModeErrorAlarmWhenConnected) {
+  MqttMockState::instance().connected_val = true;
+  strncpy(saved_device_uuid, "device-uuid-test-0000-000000000000", 36);
+  addFeature("mode", "mode-uuid-0000-0000-000000000005");
+  g_temp = 28.0f;
+  read_temp_sensor_value();
+
+  mock_advance_millis(COOLING_SHORT_RISE_CHECK_SECONDS * 1000UL);
+  g_temp = 28.1f;
+  read_temp_sensor_value();
+
+  ASSERT_EQ(thermostat_mode, MODE_COOLING_FAULT);
+  ASSERT_EQ(MqttAlarmCapture::instance().calls.size(), 1u);
+  EXPECT_EQ(MqttAlarmCapture::instance().calls[0].feature_name, "mode");
+  EXPECT_EQ(MqttAlarmCapture::instance().calls[0].alarm_type, "thermostat-mode-error");
+  EXPECT_FLOAT_EQ(MqttAlarmCapture::instance().calls[0].value, -1.0f);
 }
 
 TEST_F(MainInoTest, CoolingWideCheckFaultsWhenTemperatureRises) {

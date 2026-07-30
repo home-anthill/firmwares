@@ -8,7 +8,7 @@ This is a monorepo of ESP32 projects for the **home-anthill** IoT platform. The 
 
 The device firmwares use Arduino CLI, target **ESP32** boards (esp32, esp32s2, esp32s3), and share a common architecture pattern. The MCP9600 simulator is an ESP-IDF project for ESP32-S3 and is not part of the Arduino firmware build matrix.
 
-Outbound telemetry is signed with HMAC-SHA256 over `deviceUuid\nfeatureUuid\nfeatureName\ntimestamp\nnonce\npayloadJson`. Keep this canonical format aligned with `consumer` and `online-receiver`; do not remove the feature name from the signed material.
+Outbound telemetry is signed with HMAC-SHA256 over `deviceUuid\nfeatureUuid\nfeatureName\ntimestamp\nnonce\npayloadJson`. Keep this canonical format aligned with `consumer` and `alarm-receiver`; do not remove the feature name from the signed material.
 
 ## Repository Layout
 

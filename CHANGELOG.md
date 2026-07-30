@@ -4,6 +4,8 @@
 
 ### Features
 
+- Changed `airquality-pir` motion polling from 30 seconds to one second and added signed rising-edge motion alarms on `alarms/{deviceUuid}/features/{motionFeatureUuid}/motion`.
+- Added signed thermostat mode-error alarms on `alarms/{deviceUuid}/features/{modeFeatureUuid}/thermostat-mode-error`; errors detected while MQTT is disconnected are not replayed.
 - Added device feature specs to registration payloads so UI clients can render booleans, numeric ranges, and list options from firmware metadata.
 - Added optional SSD1306 OLED display support, controlled by `OLED_DISPLAY`.
 - Added in-memory feature value tracking for display rendering.
@@ -16,6 +18,7 @@
 
 ### Tests
 
+- Added host coverage for alarm topics and payloads, PIR edge behavior and polling, and connected/disconnected thermostat alarm publication.
 - Added host tests for `feature_values` and OLED display modules.
 - Expanded main `.ino` tests for feature specs, online status publishing, feature value recording, and command value display updates.
 

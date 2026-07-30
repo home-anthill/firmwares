@@ -36,6 +36,15 @@ TEST_F(MqttHandlerTest, NotifyValueUsesOnlineTopicForOnlineType) {
             "online/dev-uuid/features/feat-uuid");
 }
 
+TEST_F(MqttHandlerTest, NotifyAlarmUsesThermostatModeErrorTopic) {
+  mqtt_notify_alarm("dev-uuid", "mode-feature-uuid", "mode", "thermostat-mode-error", -1.0f);
+
+  EXPECT_EQ(MqttMockState::instance().last_publish_topic,
+            "alarms/dev-uuid/features/mode-feature-uuid/thermostat-mode-error");
+  EXPECT_NE(MqttMockState::instance().last_publish_payload.find(R"("payload":{"value":-1.0})"),
+            std::string::npos);
+}
+
 // ===========================================================================
 // mqtt_notify_value — payload structure
 // ===========================================================================

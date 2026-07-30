@@ -95,6 +95,35 @@ void mqtt_notify_value(const char* device_uuid, const char* feature_uuid,
   });
 }
 
+struct AlarmCall {
+  std::string device_uuid;
+  std::string feature_uuid;
+  std::string feature_name;
+  std::string alarm_type;
+  float value;
+};
+
+struct MqttAlarmCapture {
+  std::vector<AlarmCall> calls;
+
+  static MqttAlarmCapture& instance() {
+    static MqttAlarmCapture s;
+    return s;
+  }
+  static void reset() { instance().calls.clear(); }
+};
+
+void mqtt_notify_alarm(const char* device_uuid, const char* feature_uuid,
+                       const char* feature_name, const char* alarm_type, float value) {
+  MqttAlarmCapture::instance().calls.push_back({
+    device_uuid ? device_uuid : "",
+    feature_uuid ? feature_uuid : "",
+    feature_name ? feature_name : "",
+    alarm_type ? alarm_type : "",
+    value
+  });
+}
+
 // --- display ----------------------------------------------------------------
 
 void init_display(uint8_t) {}
@@ -191,11 +220,13 @@ JsonDocument buildFeatures();
 void         read_and_send_airquality_value();
 void         read_and_send_pir_value();
 void         send_online_status();
+void         alarms_init();
 
 // Expose <main-project-arduino-file>.ino globals so the fixture can reset them.
 extern JsonDocument doc_features;
 extern JsonArray    saved_features;
 extern char         saved_device_uuid[37];
+extern AlarmID_t    alarm_pir;
 
 // =============================================================================
 // Fixture — resets all shared state before every test.
@@ -209,7 +240,9 @@ protected:
     memset(saved_device_uuid, 0, sizeof(saved_device_uuid));
 
     MqttNotifyCapture::reset();
+    MqttAlarmCapture::reset();
     FeatureValueCapture::reset();
+    Alarm.reset();
     g_airquality_has_newvalue = false;
     g_airquality_value        = 0;
     g_pir_prev_value          = -1;
@@ -409,6 +442,10 @@ TEST_F(MainInoTest, ReadPirPublishesWhenValueChangedAndFeatureFound) {
   EXPECT_FLOAT_EQ(MqttNotifyCapture::instance().calls[0].value, 1.0f);
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].device_uuid, "device-uuid-test-0000-000000000000");
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].feature_uuid, "mo-uuid-0000-0000-000000000002");
+  ASSERT_EQ(MqttAlarmCapture::instance().calls.size(), 1u);
+  EXPECT_EQ(MqttAlarmCapture::instance().calls[0].feature_name, "motion");
+  EXPECT_EQ(MqttAlarmCapture::instance().calls[0].alarm_type, "motion");
+  EXPECT_FLOAT_EQ(MqttAlarmCapture::instance().calls[0].value, 1.0f);
 }
 
 TEST_F(MainInoTest, ReadPirSkipsPublishWhenValueUnchanged) {
@@ -420,7 +457,21 @@ TEST_F(MainInoTest, ReadPirSkipsPublishWhenValueUnchanged) {
   read_and_send_pir_value();
 
   EXPECT_EQ(MqttNotifyCapture::instance().calls.size(), 0u);
+  EXPECT_EQ(MqttAlarmCapture::instance().calls.size(), 0u);
   EXPECT_EQ(FeatureValueCapture::instance().set_calls.size(), 0u);
+}
+
+TEST_F(MainInoTest, ReadPirPublishesFallingEdgeAsTelemetryWithoutAlarm) {
+  strncpy(saved_device_uuid, "device-uuid-test-0000-000000000000", 36);
+  addFeature("motion", "mo-uuid-0000-0000-000000000002");
+  g_pir_prev_value = 1;
+  g_pir_value = 0;
+
+  read_and_send_pir_value();
+
+  ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 1u);
+  EXPECT_FLOAT_EQ(MqttNotifyCapture::instance().calls[0].value, 0.0f);
+  EXPECT_EQ(MqttAlarmCapture::instance().calls.size(), 0u);
 }
 
 TEST_F(MainInoTest, ReadPirSkipsPublishWhenFeatureNotFound) {
@@ -435,6 +486,13 @@ TEST_F(MainInoTest, ReadPirSkipsPublishWhenFeatureNotFound) {
   ASSERT_EQ(FeatureValueCapture::instance().set_calls.size(), 1u);
   EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "motion");
   EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[0].value, 1.0f);
+  EXPECT_EQ(MqttAlarmCapture::instance().calls.size(), 0u);
+}
+
+TEST_F(MainInoTest, PirAlarmRunsEverySecond) {
+  alarms_init();
+
+  EXPECT_EQ(Alarm.period(alarm_pir), 1UL);
 }
 
 // =============================================================================

@@ -42,6 +42,7 @@ void record_command_values(uint8_t* payload, unsigned int length);
 void read_temp_sensor_value();
 void send_online_status();
 void publish_sensor_value(const char* feature_name, float value);
+void publish_alarm(const char* feature_name, const char* alarm_type, float value);
 void alarms_init();
 void alarm_temperature_enable();
 void alarm_online_enable();
@@ -353,6 +354,20 @@ void publish_sensor_value(const char* feature_name, float value) {
   }
 }
 
+void publish_alarm(const char* feature_name, const char* alarm_type, float value) {
+  if (!mqtt_client.connected()) {
+    Serial.printf("publish_alarm - MQTT not connected, skipping %s\n", alarm_type);
+    return;
+  }
+
+  char feature_uuid[37];
+  if (get_feature_uuid_by_name(feature_uuid, sizeof(feature_uuid), feature_name)) {
+    mqtt_notify_alarm(saved_device_uuid, feature_uuid, feature_name, alarm_type, value);
+  } else {
+    Serial.printf("publish_alarm - feature uuid not found for %s\n", feature_name);
+  }
+}
+
 void read_temp_sensor_value() {
   Serial.println("read_temp_sensor_value - called");
   float temp = temp_get_temperature();
@@ -438,6 +453,9 @@ void read_temp_sensor_value() {
     if (thermostat_mode != mode_before_update) {
       feature_values_set("mode", thermostat_mode);
       publish_sensor_value("mode", static_cast<float>(thermostat_mode));
+      if (thermostat_mode == THERMOSTAT_MODE_COOLING_FAULT) {
+        publish_alarm("mode", "thermostat-mode-error", static_cast<float>(thermostat_mode));
+      }
     }
   }
 }

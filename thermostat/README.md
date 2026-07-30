@@ -51,11 +51,8 @@ OPERATING_MODE   = compile-time operating mode (0 cooling, 1 heating)
 thermostat_mode  = runtime state (-1 fault, 0 sleep, 1 cold, 2 heat)
 ```
 
-The runtime mode feature definition, `feature_values_set("mode", ...)`, and
-`publish_sensor_value("mode", ...)` are currently commented out. The remapped
-state therefore controls local logic but is not registered, cached, or
-published yet. The commented feature specification already uses `-1` through
-`2` so it remains aligned when mode telemetry is restored.
+The runtime mode feature is registered and cached. Mode transitions are
+published as signed sensor telemetry while MQTT is connected.
 
 On a fresh Preferences/NVS store, `get_setpoint()` and `get_tolerance()` use
 the defaults above. A normal USB firmware upload may leave existing NVS data
@@ -337,6 +334,12 @@ COLD = OFF immediately
 PUMP = OFF immediately
 FAN  = requested OFF using its configured cooldown delay
 ```
+
+When the fault transition occurs while MQTT is connected, the thermostat also
+publishes a signed real-time alarm on
+`alarms/{deviceUuid}/features/{modeFeatureUuid}/thermostat-mode-error` with
+`{"value":-1.0}`. If MQTT is disconnected at that moment, the alarm is skipped
+and is not queued for delivery after reconnection.
 
 The two durations are configured by `COOLING_SHORT_RISE_CHECK_SECONDS` and
 `COOLING_WIDE_RISE_CHECK_SECONDS` in `secrets.h`. Both values must be greater

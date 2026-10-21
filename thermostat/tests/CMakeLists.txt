@@ -190,6 +190,16 @@ add_executable(test_main_ino_heat
 )
 configure_main_ino_test(test_main_ino_heat 1)
 
+# Exercise each disabled-check combination against the same control-loop tests.
+foreach(variant IN ITEMS no_short no_wide no_rise_checks)
+  add_executable(test_main_ino_${variant} test_main_ino.cpp main_ino_wrapper.cpp)
+  configure_main_ino_test(test_main_ino_${variant} 0)
+endforeach()
+target_compile_definitions(test_main_ino_no_short PRIVATE COOLING_SHORT_RISE_CHECK_SECONDS=0)
+target_compile_definitions(test_main_ino_no_wide PRIVATE COOLING_WIDE_RISE_CHECK_SECONDS=0)
+target_compile_definitions(test_main_ino_no_rise_checks PRIVATE
+  COOLING_SHORT_RISE_CHECK_SECONDS=0 COOLING_WIDE_RISE_CHECK_SECONDS=0)
+
 # ---------------------------------------------------------------------------
 # Register tests with CTest
 # ---------------------------------------------------------------------------
@@ -202,3 +212,6 @@ add_test(NAME temp_sensor_tests   COMMAND test_temp_sensor)
 add_test(NAME controller_tests    COMMAND test_controller)
 add_test(NAME main_ino_tests      COMMAND test_main_ino)
 add_test(NAME main_ino_heat_tests COMMAND test_main_ino_heat)
+add_test(NAME main_ino_no_short_tests COMMAND test_main_ino_no_short)
+add_test(NAME main_ino_no_wide_tests COMMAND test_main_ino_no_wide)
+add_test(NAME main_ino_no_rise_checks_tests COMMAND test_main_ino_no_rise_checks)

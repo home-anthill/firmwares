@@ -8,6 +8,7 @@
 // include http library (also required to use 'WiFiClientSecure')
 #include <HTTPClient.h>
 
+#include "config.h"
 #include "secrets.h"
 
 // include all local files

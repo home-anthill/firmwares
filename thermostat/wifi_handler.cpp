@@ -5,6 +5,7 @@
 #include <HTTPClient.h>
 #include <time.h>
 
+#include "config.h"
 #include "secrets.h"
 
 const char* ssid = SECRET_SSID; 

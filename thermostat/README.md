@@ -1,10 +1,53 @@
-# Thermostat Output Control Analysis
+# thermostat — MCP9600 heating/cooling controller
 
-## Scope and definitions
+Controls temperature locally every 5 seconds, including while offline. Uses
+persisted setpoint/tolerance and compile-time cooling or heating mode. Publishes
+temperature and runtime mode transitions when MQTT is connected.
 
-This document describes the output-control implementation in `thermostat.ino`,
+## Hardware and connections
+
+Use an ESP32, MCP9600 at `0x67`, a matching thermocouple (K by default), and
+suitable HEAT/COLD/FAN/PUMP drivers and thermal hardware.
+
+| Connection | ESP32-S2/S3
+|---|---|
+| MCP9600 SDA / SCL | GPIO39 / GPIO40
+| Thermocouple + / − | MCP9600 terminals, correct type/polarity
+| HEAT driver | GPIO5
+| COLD driver | GPIO6
+| FAN driver | GPIO7
+| PUMP driver | GPIO15
+
+### Configuration
+
+Edit `thermostat/config.h` to match your wiring. Set `OLED_DISPLAY=false` if no
+display is fitted. Current defaults: `OPERATING_MODE=0` (cooling), FAN cooldown
+60 seconds, and both cooling rise checks disabled (`0`). Set `OPERATING_MODE=1`
+for heating; other values fail compilation.
+
+## Supported features
+
+Values match `buildFeatures()`. Steps are registration/UI increments, not
+measurement accuracy.
+
+| Feature | Range / allowed values | Step |
+|---|---|---|
+| `setpoint` | 10–35 °C | 0.5 °C |
+| `tolerance` | 0–10 °C | 0.5 °C |
+| `temperature` | −40–200 °C | 0.01 °C |
+| `mode` | −1 Fault; 0 Sleep; 1 Cold; 2 Heat | 1 |
+
+The [MCP9600 datasheet](https://ww1.microchip.com/downloads/aemDocuments/documents/MSLD/ProductDocuments/MCP960X-Data-Sheet-20005426.pdf)
+specifies 0.0625 °C resolution. The thermocouple assembly's limits depend on
+the fitted probe. Runtime `mode` is separate from `OPERATING_MODE`.
+
+## Control behavior
+
+### Scope and definitions
+
+This section describes the output-control implementation in `thermostat.ino`,
 configuration persistence in `controller.cpp`, sensor filtering in
-`temp_sensor.cpp`, and output settings in `secrets.h`.
+`temp_sensor.cpp`, and output settings in `config.h`.
 
 ```text
 S  = setpoint
@@ -29,9 +72,9 @@ Tl = 20 C
 Tu = 30 C
 temperature sample period = 5 seconds
 fan turn-off delay = 240 seconds
-cooling short rise check = 120 seconds
-cooling wide rise check = 600 seconds
-OPERATING_MODE = 1 (heating)
+cooling short rise check = 0 (disabled)
+cooling wide rise check = 0 (disabled)
+OPERATING_MODE = 0 (cooling)
 ```
 
 `OPERATING_MODE` is a compile-time configuration:
@@ -58,10 +101,10 @@ On a fresh Preferences/NVS store, `get_setpoint()` and `get_tolerance()` use
 the defaults above. A normal USB firmware upload may leave existing NVS data
 intact, so an already-used board can boot with its previously stored values.
 
-## Physical output polarity
+### Physical output polarity
 
 `output_level(active_low, active)` translates a logical command into a GPIO
-level. With the current `secrets.h` configuration:
+level. With the current `config.h` configuration:
 
 > [!WARNING]
 > **Mandatory hardware safety requirement:** every HEAT, COLD, FAN, and PUMP
@@ -93,7 +136,7 @@ If any `*_ACTIVE_LOW` setting changes, the corresponding hardware bias must be
 reviewed and inverted when necessary. Resistor values and voltage rails must
 match the actual relay/driver input circuit and must not back-power the ESP32.
 
-## Startup output safety
+### Startup output safety
 
 `outputs_init()` is the first hardware action in `setup()`. For every output it
 preloads the inactive ESP32 output latch, enables the output driver, and then
@@ -122,11 +165,11 @@ FAN   <- control loop
 HEAT remains at startup OFF       COLD/PUMP/FAN remain at startup OFF
 ```
 
-## Cooling control (`OPERATING_MODE=0`)
+### Cooling control (`OPERATING_MODE=0`)
 
-Heating comparisons and runtime HEAT writes are not compiled into this branch (if you configure `OPERATING_MODE=0` in `secrets.h`).
+Heating comparisons and runtime HEAT writes are not compiled into this branch (if you configure `OPERATING_MODE=0` in `config.h`).
 
-### First valid reading
+#### First valid reading
 
 There is no mode history after boot. The first valid reading starts cooling as
 soon as the measured temperature is above the setpoint:
@@ -165,7 +208,7 @@ thermostat_mode      = 1
 prev_thermostat_mode = 1
 ```
 
-### Active cycle and restart deadband
+#### Active cycle and restart deadband
 
 Cooling continues while `t > S` and stops when `t <= S`. The previous mode
 remains `1`, so cooling cannot restart until `t >= Tu`:
@@ -256,7 +299,7 @@ When cooling is active, the output requests are:
 When cooling is sleeping, COLD and PUMP are OFF. FAN is requested OFF and may
 stay physically on until its cooldown deadline.
 
-### Cooling example
+#### Cooling example
 
 With `S = 20 C`, `T = 5 C`, and `Tu = 25 C`:
 
@@ -292,12 +335,14 @@ t = 22 C, State=COLD,  Remembered=COLD  -> active cycle: COLD stays ON
 t = 22 C, State=SLEEP, Remembered=COLD  -> restart cycle: COLD stays OFF
 ```
 
-### Cooling rise safety checks
+#### Cooling rise safety checks
 
 The COLD output is hardware-agnostic and may be connected to a conventional
 cooler or a Peltier module. A reversed or damaged Peltier system can heat the
-controlled fluid while cooling is requested, so cooling builds perform two
-simple temperature-rise checks while mode is `1` (cold):
+controlled fluid while cooling is requested, so cooling builds can enable two
+simple temperature-rise checks while mode is `1` (cold). Both are disabled by
+default. The following example uses 120 seconds for the short check and
+600 seconds for the wide check:
 
 ```text
 COLD starts at t0
@@ -342,15 +387,18 @@ publishes a signed real-time alarm on
 and is not queued for delivery after reconnection.
 
 The two durations are configured by `COOLING_SHORT_RISE_CHECK_SECONDS` and
-`COOLING_WIDE_RISE_CHECK_SECONDS` in `secrets.h`. Both values must be greater
-than zero or firmware compilation fails.
+`COOLING_WIDE_RISE_CHECK_SECONDS` in `config.h`. Each defaults to `0`, disabling
+that check independently. Set a positive interval in seconds to enable it;
+undefined or negative values fail compilation. With both checks disabled,
+rising temperature does not trigger the cooling fault. Normal setpoint control
+and FAN cooldown still apply.
 
-## Heating control (`OPERATING_MODE=1`)
+### Heating control (`OPERATING_MODE=1`)
 
 Cooling comparisons and runtime COLD, PUMP, and FAN writes are not compiled
-into this branch (if you configure `OPERATING_MODE=1` in `secrets.h`).
+into this branch (if you configure `OPERATING_MODE=1` in `config.h`).
 
-### First valid reading
+#### First valid reading
 
 There is no mode history after boot. The first valid reading starts heating as
 soon as the measured temperature is below the setpoint:
@@ -384,7 +432,7 @@ thermostat_mode      = 2
 prev_thermostat_mode = 2
 ```
 
-### Active cycle and restart deadband
+#### Active cycle and restart deadband
 
 Heating continues while `t < S` and stops when `t >= S`. The previous mode
 remains `2`, so heating cannot restart until `t <= Tl`:
@@ -407,7 +455,7 @@ When heating is active, the output requests are:
 
 When heating is sleeping, HEAT is OFF.
 
-### Heating example
+#### Heating example
 
 With `S = 20 C`, `T = 5 C`, and `Tl = 15 C`:
 
@@ -422,7 +470,7 @@ Sample  t      State at start  Remembered mode  Decision                 State a
 6       15 C   SLEEP           HEAT             restart exactly at Tl    HEAT
 ```
 
-## Fan turn-off delay
+### Fan turn-off delay
 
 This applies only to cooling builds. While cooling, every temperature cycle
 calls `write_fan_output(true)`, which turns FAN on and clears an old deadline.
@@ -431,7 +479,7 @@ When cooling stops, the first `write_fan_output(false)` call does this:
 
 ```text
 fan_requested_active: true -> false
-fan_turn_off_at_ms = now + 240 seconds
+fan_turn_off_at_ms = now + 120 seconds
 FAN remains physically ON
 ```
 
@@ -443,9 +491,9 @@ at/after deadline: FAN turns OFF
 ```
 
 Because temperature is sampled every 5 seconds, normal fan shutdown can occur
-up to about one sample period after the 240-second deadline.
+up to about one sample period after the 120-second deadline.
 
-## Startup and reboot sequence
+### Startup and reboot sequence
 
 ```text
 MCU reset
@@ -464,7 +512,7 @@ MCU reset
       +-- earlier if MQTT connects and calls publish_initial_values()
 ```
 
-### Fresh board or erased NVS
+#### Fresh board or erased NVS
 
 There are no saved controller values, so control uses `S = 25 C`, `T = 5 C`,
 sleep mode, and no history. This is expected and is not an issue: tolerance is a
@@ -477,14 +525,14 @@ OPERATING_MODE=0: start cold mode for t > 25 C; otherwise stay asleep
 OPERATING_MODE=1: start heat mode for t < 25 C; otherwise stay asleep
 ```
 
-### Reboot with existing NVS
+#### Reboot with existing NVS
 
 Saved setpoint and tolerance can be restored, but operating state and history
 are not persisted. Every reboot deliberately starts sleeping with no history,
 then bootstraps the selected operating mode from the first valid temperature
 reading.
 
-### USB firmware upload
+#### USB firmware upload
 
 Uploading a sketch does not necessarily erase Preferences/NVS:
 
@@ -496,60 +544,74 @@ retained NVS     -> previously stored values, if readable
 For deterministic commissioning, deployment must explicitly decide whether to
 preserve or erase Preferences.
 
-### Controller command contract
+#### Controller command contract
 
 Every thermostat configuration command contains the complete controller state,
 including both setpoint and tolerance. `set_configuration()` therefore replaces
 the persisted `featureValues` array with the received array by design; partial
 configuration commands are not part of the protocol.
 
-## Prioritized findings
+## Limitations
 
-1. **Critical: sensor failure can leave the selected outputs energized
-   indefinitely.** `read_temp_sensor_value()` only logs when it receives `NaN`;
-   it does not turn outputs off. Also, `temp_get_temperature()` returns the last
-   accepted value after rejecting a later bad reading, with no maximum age or
-   consecutive-failure limit. A disconnected, frozen, or noisy sensor can keep
-   control operating from stale data. The cooling rise checks do not solve a
-   frozen sensor because an unchanged stale value appears flat and therefore
-   passes by design. A pending fan deadline is also not serviced while readings
-   remain `NaN`, so FAN can remain on.
+At 18 bits, the MCP9600 has a typical 320 ms conversion plus 20 ms calculation. Actual thermal settling depends on the
+probe, fluid, installation, and cold junction; there is no fixed readiness gate.
 
-## Test coverage and current result
+**Sensor failure can leave the selected outputs energized
+indefinitely.** `read_temp_sensor_value()` only logs when it receives `NaN`;
+it does not turn outputs off. Also, `temp_get_temperature()` returns the last
+accepted value after rejecting a later bad reading, with no maximum age or
+consecutive-failure limit. A disconnected, frozen, or noisy sensor can keep
+control operating from stale data. The cooling rise checks do not solve a
+frozen sensor because an unchanged stale value appears flat and therefore
+passes by design. A pending fan deadline is also not serviced while readings
+remain `NaN`, so FAN can remain on.
 
-The host suite builds `thermostat.ino` twice:
+Connectivity retries are bounded and non-blocking; exhausted attempts enter a
+12-hour cooldown before reboot. Local temperature alarms continue meanwhile.
 
-```text
-test_main_ino       -> OPERATING_MODE=0 (cooling)
-test_main_ino_heat  -> OPERATING_MODE=1 (heating)
+## Libraries and build
+
+Run these commands from the repository root with Arduino CLI installed:
+
+```sh
+arduino-cli lib install "ArduinoJson"@7.4.3 "PubSubClient"@2.8.0 \
+  "TimeAlarms"@1.5.0 "Time"@1.6.1
+arduino-cli lib install "Adafruit MCP9600 Library"@2.0.4 "Adafruit BusIO"@1.17.4
 ```
 
-The complete eight-suite host test set includes:
+For the optional 128×32 SSD1306 OLED (`OLED_DISPLAY=true`), also install:
 
-```text
-storage_tests
-registration_tests
-mqtt_handler_tests
-display_tests
-temp_sensor_tests
-controller_tests
-main_ino_tests
-main_ino_heat_tests
+```sh
+arduino-cli lib install "Adafruit GFX Library"@1.12.6 \
+  "Adafruit SSD1306"@2.5.17 "Adafruit BusIO"@1.17.4
 ```
 
-All eight suites pass with the current implementation.
+Prepare credentials if missing:
 
-The cooling and heating tests verify first start, selected output activation,
-absence of runtime writes to unselected outputs, stop at the setpoint, sleep
-samples inside the deadband, and restart exactly at `Tu` or `Tl`. Cooling tests
-also verify that flat temperature passes both safety checks, a rise latches
-mode `-1`, COLD and PUMP stop, and FAN completes its cooldown.
+```sh
+if [ ! -f thermostat/secrets.h ]; then
+  cp secret-template thermostat/secrets.h
+fi
+# Edit thermostat/secrets.h: WiFi, MODEL, admission and MQTT settings.
+arduino-cli compile --fqbn esp32:esp32:esp32s3 ./thermostat/thermostat.ino
+```
 
-The setpoint tests and registration specification use a maximum of `35 C`:
-`35 C` is accepted at the boundary and `36 C` is rejected.
+If changing TLS, keep `SSL`, `SERVER_PORT`, and `MQTT_PORT` consistent.
+Replace `<PORT>` with the board's serial port; serial output uses 115200 baud:
 
-Important missing tests:
+```sh
+arduino-cli upload --fqbn esp32:esp32:esp32s3 --port "<PORT>" ./thermostat/thermostat.ino
+```
+## Tests
 
-1. `NaN` while HEAT is active and while COLD/PUMP/FAN are active.
-2. Rejected or stale sensor values for longer than a safe timeout.
-3. Fan cooldown expiry when later temperature reads fail.
+Requires CMake, a native C++ compiler, and network access on first configuration
+to fetch GoogleTest and ArduinoJson. No ESP32 board is required.
+
+```sh
+cmake -S thermostat/tests -B thermostat/tests/build
+cmake --build thermostat/tests/build --parallel
+ctest --test-dir thermostat/tests/build --output-on-failure
+```
+
+The host suite compiles both cooling and heating variants; run the full CTest
+directory to cover both. Verify reset/output bias and real loads on hardware.

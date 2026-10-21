@@ -15,6 +15,7 @@
 #include <ArduinoJson.h>
 
 // secrets.h must come before any firmware header that uses SSL/MODEL/API_TOKEN.
+#include "config.h"
 #include "secrets.h"
 
 #ifndef HOT_ACTIVE_LOW
@@ -166,7 +167,10 @@ static char   g_stored_uuid[37] = {};
 static size_t g_stored_uuid_len  = 0;
 
 size_t storage_get_uuid(char* buf) {
-  if (buf) { strncpy(buf, g_stored_uuid, 36); buf[36] = '\0'; }
+  if (buf) {
+    strncpy(buf, g_stored_uuid, 36);
+    buf[36] = '\0';
+  }
   return g_stored_uuid_len;
 }
 size_t storage_set_uuid(const char* uuid) {
@@ -343,13 +347,13 @@ extern bool         fan_requested_active;
 extern unsigned long fan_turn_off_at_ms;
 
 // =============================================================================
-// Constants — pin numbers matching thermostat.ino #defines
+// Constants — pin numbers from config.h
 // =============================================================================
 
-static constexpr uint8_t PIN_HEAT = 4;
-static constexpr uint8_t PIN_COLD = 5;
-static constexpr uint8_t PIN_FAN  = 6;
-static constexpr uint8_t PIN_PUMP = 7;
+static constexpr uint8_t PIN_HEAT = HEAT;
+static constexpr uint8_t PIN_COLD = COLD;
+static constexpr uint8_t PIN_FAN  = FAN;
+static constexpr uint8_t PIN_PUMP = PUMP;
 
 static constexpr uint8_t outputLevel(bool active_low, bool active) {
   return active ? (active_low ? LOW : HIGH) : (active_low ? HIGH : LOW);
@@ -895,6 +899,7 @@ TEST_F(MainInoTest, ReadTempAtSetpointKeepsCoolingOutputsOff) {
   EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN], FAN_OFF);
 }
 
+#if COOLING_SHORT_RISE_CHECK_SECONDS > 0
 TEST_F(MainInoTest, CoolingShortCheckAllowsFlatTemperature) {
   g_temp = 28.0f;
   read_temp_sensor_value();
@@ -943,6 +948,9 @@ TEST_F(MainInoTest, CoolingFaultPublishesModeErrorAlarmWhenConnected) {
   EXPECT_FLOAT_EQ(MqttAlarmCapture::instance().calls[0].value, -1.0f);
 }
 
+#endif
+
+#if COOLING_WIDE_RISE_CHECK_SECONDS > 0
 TEST_F(MainInoTest, CoolingWideCheckFaultsWhenTemperatureRises) {
   g_temp = 28.0f;
   read_temp_sensor_value();
@@ -978,6 +986,9 @@ TEST_F(MainInoTest, CoolingWideCheckAllowsFlatTemperature) {
   EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_ON);
 }
 
+#endif
+
+#if COOLING_SHORT_RISE_CHECK_SECONDS > 0
 TEST_F(MainInoTest, CoolingFaultStaysLatchedAndServicesFanCooldown) {
   g_temp = 28.0f;
   read_temp_sensor_value();
@@ -997,6 +1008,43 @@ TEST_F(MainInoTest, CoolingFaultStaysLatchedAndServicesFanCooldown) {
   EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_OFF);
   EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN], FAN_OFF);
 }
+#endif
+
+#if COOLING_SHORT_RISE_CHECK_SECONDS == 0
+TEST_F(MainInoTest, DisabledShortCheckAllowsRiseImmediatelyAndBeforeWideDeadline) {
+  g_temp = 28.0f;
+  read_temp_sensor_value();
+
+  g_temp = 28.1f;
+  read_temp_sensor_value();
+  EXPECT_EQ(thermostat_mode, MODE_COLD);
+
+  mock_advance_millis(1000);
+  g_temp = 28.2f;
+  read_temp_sensor_value();
+  EXPECT_EQ(thermostat_mode, MODE_COLD);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_ON);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_ON);
+}
+#endif
+
+#if COOLING_WIDE_RISE_CHECK_SECONDS == 0
+TEST_F(MainInoTest, DisabledWideCheckAllowsRiseAfterPassingEnabledShortCheck) {
+  g_temp = 28.0f;
+  read_temp_sensor_value();
+
+  mock_advance_millis(COOLING_SHORT_RISE_CHECK_SECONDS * 1000UL);
+  read_temp_sensor_value();
+  EXPECT_EQ(thermostat_mode, MODE_COLD);
+
+  mock_advance_millis(1800000UL);
+  g_temp = 29.0f;
+  read_temp_sensor_value();
+  EXPECT_EQ(thermostat_mode, MODE_COLD);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_ON);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_ON);
+}
+#endif
 
 #else
 

@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 
+#include "config.h"
 #include "secrets.h"
 
 #ifndef OLED_DISPLAY

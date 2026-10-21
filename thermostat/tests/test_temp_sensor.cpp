@@ -9,6 +9,7 @@
 #include "Adafruit_I2CRegister.h"
 #include "Adafruit_MCP9600.h"
 
+#include "config.h"
 #include "secrets.h"
 #include "temp_sensor.h"
 

@@ -15,6 +15,7 @@
 #error "MQTT signing requires ESP32 mbedTLS support"
 #endif
 
+#include "config.h"
 #include "secrets.h"
 
 // private functions

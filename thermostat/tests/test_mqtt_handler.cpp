@@ -8,6 +8,7 @@
 
 #include <ArduinoJson.h>
 #include "mqtt_handler.h"
+#include "config.h"
 #include "secrets.h"  // provides API_TOKEN, MQTT_USERNAME, MQTT_PASSWORD
 
 // ---------------------------------------------------------------------------

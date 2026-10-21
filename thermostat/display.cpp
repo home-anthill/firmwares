@@ -1,3 +1,4 @@
+#include "config.h"
 #include "secrets.h"
 
 #ifdef HOME_ANTHILL_TEST_OLED_DISPLAY
@@ -30,14 +31,11 @@
 // Configure I2C for Display
 // OLED GND --> GND
 // OLED VCC --> 3.3V
-// OLED SCL --> GPIO_40
-// OLED SDA --> GPIO_39
-#define I2C_SDA 39
-#define I2C_SCL 40
+// OLED SCL --> I2C_SCL from config.h
+// OLED SDA --> I2C_SDA from config.h
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 32 // OLED display height, in pixels
 // Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
-#define OLED_RESET     4 // Reset pin # (or -1 if sharing Arduino reset pin)
 
 static Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 

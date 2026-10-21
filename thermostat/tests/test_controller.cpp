@@ -8,6 +8,7 @@
 #include <ArduinoJson.h>
 #include "Preferences.h"
 
+#include "config.h"
 #include "secrets.h"   // MODEL, API_TOKEN, TEMP_MIN/MAX come from controller.cpp defines
 #include "storage.h"
 #include "controller.h"

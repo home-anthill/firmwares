@@ -12,6 +12,7 @@
 #include <Adafruit_I2CRegister.h>
 #include "Adafruit_MCP9600.h"
 
+#include "config.h"
 #include "secrets.h"
 
 #ifndef THERMOCOUPLE_TYPE
@@ -19,8 +20,6 @@
 #endif
 
 #define I2C_ADDRESS (0x67)
-#define I2C_SDA 39
-#define I2C_SCL 40
 Adafruit_MCP9600 mcp;
 /* Set and print ambient resolution */
 Ambient_Resolution ambientRes = RES_ZERO_POINT_0625;

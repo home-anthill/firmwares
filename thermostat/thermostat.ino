@@ -15,6 +15,7 @@
 #include <driver/gpio.h>
 
 // must be the first, before any internal include
+#include "config.h"
 #include "secrets.h"
 
 // include all local files
@@ -26,10 +27,6 @@
 #include "wifi_handler.h"
 #include "display.h"
 #include "feature_values.h"
-
-// build-in RGB LED
-#define BOARD_RGB_LED_PIN 38
-#define DISPLAY_BUTTON_PIN 42
 
 char mac_address[18];
 
@@ -98,30 +95,6 @@ float cooling_start_temp = NAN;
 float cooling_wide_window_start_temp = NAN;
 #endif
 
-// outputs
-#if defined(HOME_ANTHILL_TEST_OLED_DISPLAY)
-  #define HEAT 4
-  #define COLD 5
-  #define FAN 6
-  #define PUMP 7
-#elif defined(CONFIG_IDF_TARGET_ESP32S3)
-  #define HEAT 5
-  #define COLD 6
-  #define FAN 7
-  #define PUMP 15
-#elif defined(CONFIG_IDF_TARGET_ESP32S2)
-  #define HEAT 5
-  #define COLD 6
-  #define FAN 7
-  #define PUMP 15
-#elif defined(CONFIG_IDF_TARGET_ESP32)
-  // TODO: test this on a real older ESP32 model
-  #define HEAT 25
-  #define COLD 26
-  #define FAN 27
-  #define PUMP 32
-#endif
-
 // HARDWARE SAFETY REQUIREMENT: each relay/driver input must be externally held
 // at its inactive level while the ESP32 GPIO is high-impedance during reset,
 // bootloader execution, USB flashing, and startup. Use a pull-up resistor (10 KOhm) for every
@@ -133,11 +106,15 @@ float cooling_wide_window_start_temp = NAN;
 #if FAN_TURN_OFF_DELAY_SECONDS < 0
 #error "FAN_TURN_OFF_DELAY_SECONDS must be greater or equals than 0"
 #endif
-#if COOLING_SHORT_RISE_CHECK_SECONDS <= 0
-#error "COOLING_SHORT_RISE_CHECK_SECONDS must be greater than 0"
+#if !defined(COOLING_SHORT_RISE_CHECK_SECONDS)
+#error "COOLING_SHORT_RISE_CHECK_SECONDS must be defined (0 disables the check)"
+#elif COOLING_SHORT_RISE_CHECK_SECONDS < 0
+#error "COOLING_SHORT_RISE_CHECK_SECONDS must be greater than or equal to 0"
 #endif
-#if COOLING_WIDE_RISE_CHECK_SECONDS <= 0
-#error "COOLING_WIDE_RISE_CHECK_SECONDS must be greater than 0"
+#if !defined(COOLING_WIDE_RISE_CHECK_SECONDS)
+#error "COOLING_WIDE_RISE_CHECK_SECONDS must be defined (0 disables the check)"
+#elif COOLING_WIDE_RISE_CHECK_SECONDS < 0
+#error "COOLING_WIDE_RISE_CHECK_SECONDS must be greater than or equal to 0"
 #endif
 
 // ---------------------------------------------------------------------------
@@ -314,9 +291,9 @@ JsonDocument buildFeatures() {
   temperature["unit"] = "°C";
   JsonObject temperatureSpec = temperature["spec"].to<JsonObject>();
   temperatureSpec["format"] = "float";
-  temperatureSpec["min"] = -40; // TODO is this right???
-  temperatureSpec["max"] = 200; // TODO is this right???
-  temperatureSpec["step"] = 0.01; // TODO is this right???
+  temperatureSpec["min"] = -40;
+  temperatureSpec["max"] = 200;
+  temperatureSpec["step"] = 0.01;
 
   JsonObject mode = array.add<JsonObject>();
   mode["type"] = "sensor";
@@ -534,7 +511,8 @@ void cooling_safety_reset() {
  * At the configured short and recurring wide deadlines, this compares the
  * latest valid sensor temperature with the applicable cooling baseline. A
  * successful wide check advances that window's time and temperature baseline.
- * If monitoring is inactive or no check is due, the sample passes unchanged.
+ * A zero interval disables its check independently. If monitoring is inactive
+ * or no enabled check is due, the sample passes unchanged.
  *
  * @param temp Latest valid temperature sample, in degrees Celsius.
  * @return true if no due check detected a temperature rise; false if the
@@ -556,7 +534,8 @@ bool cooling_safety_temperature_not_rising(float temp) {
   // The first check catches an incorrectly wired or failing Peltier that heats
   // the fluid soon after COLD is enabled. Equal temperature is safe here: this
   // check guards against heating and does not validate cooling performance.
-  if (!cooling_short_rise_check_done && now - cooling_started_at_ms >= short_check_ms) {
+  if (COOLING_SHORT_RISE_CHECK_SECONDS > 0 && !cooling_short_rise_check_done &&
+      now - cooling_started_at_ms >= short_check_ms) {
     cooling_short_rise_check_done = true;
     if (temp > cooling_start_temp) {
       Serial.printf("cooling_safety - temperature rose during short check: %.2f > %.2f\n", temp, cooling_start_temp);
@@ -566,7 +545,8 @@ bool cooling_safety_temperature_not_rising(float temp) {
 
   // The recurring wide window catches a later Peltier or thermal-path failure.
   // A successful window becomes the baseline for the next wide window.
-  if (now - cooling_wide_window_started_at_ms >= wide_check_ms) {
+  if (COOLING_WIDE_RISE_CHECK_SECONDS > 0 &&
+      now - cooling_wide_window_started_at_ms >= wide_check_ms) {
     if (temp > cooling_wide_window_start_temp) {
       Serial.printf("cooling_safety - temperature rose during wide check: %.2f > %.2f\n", temp, cooling_wide_window_start_temp);
       return false;

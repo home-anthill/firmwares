@@ -1,3 +1,6 @@
+#include "config.h"
+#include "secrets.h"
+
 #include <gtest/gtest.h>
 #include <cstring>
 
@@ -10,7 +13,7 @@
 #include "display.h"
 #include "feature_values.h"
 
-static const uint8_t kDisplayButtonPin = 42;
+static const uint8_t kDisplayButtonPin = DISPLAY_BUTTON_PIN;
 
 static FeatureValue g_feature_values[3];
 static size_t g_feature_values_count = 0;
@@ -43,6 +46,7 @@ protected:
     EspMockState::reset();
     g_digital_read_value = HIGH;
     display_reset_for_test();
+    display_set_button_enabled_for_test(true);
     display_set_button_enabled_for_test(true);
     mock_set_millis(0);
     memset(g_feature_values, 0, sizeof(g_feature_values));

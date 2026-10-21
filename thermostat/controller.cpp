@@ -4,6 +4,7 @@
 #include <ArduinoJson.h>
 #include <ctime>
 
+#include "config.h"
 #include "secrets.h"
 
 // include local files

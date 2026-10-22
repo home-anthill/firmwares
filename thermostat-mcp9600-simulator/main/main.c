@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -15,16 +17,7 @@
 #include "display.h"
 
 #define I2C_PORT I2C_NUM_0
-#define I2C_SDA_PIN GPIO_NUM_39
-#define I2C_SCL_PIN GPIO_NUM_40
 #define I2C_ADDRESS 0x67
-
-#define RGB_LED_PIN GPIO_NUM_48
-
-#define BUTTON_PLUS_01_PIN GPIO_NUM_4
-#define BUTTON_PLUS_05_PIN GPIO_NUM_5
-#define BUTTON_MINUS_01_PIN GPIO_NUM_6
-#define BUTTON_MINUS_05_PIN GPIO_NUM_7
 
 #define BUTTON_DEBOUNCE_MS 30
 #define INITIAL_TEMPERATURE_TENTHS 250
@@ -352,7 +345,9 @@ void app_main(void) {
   ESP_LOGI(TAG, "MCP9600 simulator ready at I2C address 0x%02x", I2C_ADDRESS);
   ESP_LOGI(TAG, "I2C SDA=%d, SCL=%d", I2C_SDA_PIN, I2C_SCL_PIN);
   ESP_LOGI(TAG, "RGB LED disabled on GPIO %d", RGB_LED_PIN);
-  ESP_LOGI(TAG, "Buttons connect GPIO 4, 5, 6, or 7 directly to GND");
+  ESP_LOGI(TAG, "Buttons connect GPIO %d, %d, %d, or %d directly to GND",
+           BUTTON_PLUS_01_PIN, BUTTON_PLUS_05_PIN,
+           BUTTON_MINUS_01_PIN, BUTTON_MINUS_05_PIN);
   ESP_LOGI(TAG, "Current temperature: requested %.1f C, MCP9600 value %.4f C",
            temperature_tenths / 10.0f,
            raw_to_celsius(sensor.hot_junction_raw));

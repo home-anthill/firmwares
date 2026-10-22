@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include "display.h"
 
 #include <stddef.h>
@@ -10,8 +12,6 @@
 #include "esp_log.h"
 
 #define OLED_I2C_PORT I2C_NUM_1
-#define OLED_SDA_PIN GPIO_NUM_8
-#define OLED_SCL_PIN GPIO_NUM_9
 #define OLED_I2C_ADDRESS 0x3c
 #define OLED_WIDTH 128
 #define OLED_HEIGHT 32

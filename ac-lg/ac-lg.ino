@@ -17,6 +17,7 @@
 #include <Preferences.h>
 
 // must be the first, before any internal include
+#include "config.h"
 #include "secrets.h"
 
 // include all local files
@@ -27,10 +28,6 @@
 #include "ir_lg_controller.h"
 #include "display.h"
 #include "feature_values.h"
-
-// build-in RGB LED
-#define BOARD_RGB_LED_PIN 38
-#define DISPLAY_BUTTON_PIN 42
 
 char mac_address[18];
 

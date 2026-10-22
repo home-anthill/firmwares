@@ -11,6 +11,7 @@
 #include "ir_LG.h"
 
 #include <ArduinoJson.h>
+#include "config.h"
 #include "secrets.h"  // provides API_TOKEN, MODEL
 #include "ir_lg_controller.h"
 

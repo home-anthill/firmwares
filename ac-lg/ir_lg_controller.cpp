@@ -15,6 +15,7 @@
 #include <ir_LG.h>
 #include <ctime>
 
+#include "config.h"
 #include "secrets.h"
 
 // private functions
@@ -151,10 +152,6 @@ static bool verify_command_signature(JsonObject mqttFeature) {
   return true;
 }
 
-// ------------------------------------------------------
-// ------------------ IRremoteESP8266 -------------------
-// GPIO pin to use to send IR signals
-#define IR_SEND_PIN 4
 // ------------------------------------------------------
 // ------------------ LG protocol -----------------------
 // Temoerature ranges

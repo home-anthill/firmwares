@@ -11,6 +11,7 @@
 #include "ir_Coolix.h"
 
 #include <ArduinoJson.h>
+#include "config.h"
 #include "secrets.h"
 
 // NOTE: ir_beko.h and ir_beko.h (the mock) differ only in case.  On macOS's

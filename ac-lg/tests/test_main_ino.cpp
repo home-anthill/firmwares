@@ -13,6 +13,7 @@
 #include <ArduinoJson.h>
 
 // secrets.h must come before any firmware header that uses SSL/MANUFACTURER/MODEL.
+#include "config.h"
 #include "secrets.h"
 
 // Headers from the firmware (needed for function signatures only).
@@ -172,7 +173,10 @@ static char   g_stored_uuid[37] = {};
 static size_t g_stored_uuid_len  = 0;
 
 size_t storage_get_uuid(char* buf) {
-  if (buf) { strncpy(buf, g_stored_uuid, 36); buf[36] = '\0'; }
+  if (buf) {
+    strncpy(buf, g_stored_uuid, 36);
+    buf[36] = '\0';
+  }
   return g_stored_uuid_len;
 }
 size_t storage_set_uuid(const char* uuid) {

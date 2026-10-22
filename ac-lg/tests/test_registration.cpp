@@ -11,6 +11,7 @@
 #include <ArduinoJson.h>
 #include "storage.h"
 #include "registration.h"
+#include "config.h"
 #include "secrets.h"
 
 // ---------------------------------------------------------------------------

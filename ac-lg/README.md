@@ -6,7 +6,7 @@ temperature or environmental sensor.
 
 ## Hardware and connections
 
-Use an **ESP32-S3**; ESP32-S2 is not supported for this firmware. Connect an IR transmitter board, or an IR LED with a current-limited
+Use an **ESP32-S3**, the only supported board family. Connect an IR transmitter board, or an IR LED with a current-limited
 transistor/MOSFET driver.
 
 | Connection | Destination |
@@ -14,6 +14,8 @@ transistor/MOSFET driver.
 | IR driver control | GPIO4, `IR_SEND_PIN` |
 
 ### Configuration
+
+This project includes its own `config.h`; edit it directly. No config template is required.
 
 Edit `ac-lg/config.h` to match your wiring. Set `OLED_DISPLAY=false` if no
 display is fitted.
@@ -60,9 +62,7 @@ arduino-cli lib install "Adafruit GFX Library"@1.12.6 \
 Prepare credentials if missing:
 
 ```sh
-if [ ! -f ac-lg/secrets.h ]; then
-  cp secrets-template ac-lg/secrets.h
-fi
+cp secrets-template ac-lg/secrets.h
 # Edit ac-lg/secrets.h: WiFi, MODEL, admission and MQTT settings.
 arduino-cli compile --fqbn esp32:esp32:esp32s3 ./ac-lg/ac-lg.ino
 ```

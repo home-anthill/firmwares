@@ -5,4 +5,5 @@
 #define CONFIG_IDF_TARGET_ESP32S2
 #endif
 
+#include "main_ino_config.h"
 #include "../thermostat.ino"

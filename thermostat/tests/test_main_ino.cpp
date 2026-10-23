@@ -15,7 +15,7 @@
 #include <ArduinoJson.h>
 
 // secrets.h must come before any firmware header that uses SSL/MODEL/API_TOKEN.
-#include "config.h"
+#include "main_ino_config.h"
 #include "secrets.h"
 
 #ifndef HOT_ACTIVE_LOW
@@ -223,8 +223,9 @@ bool feature_values_set(const char* name, float value) {
 // --- temp_sensor (controllable return values) --------------------------------
 
 static float g_temp = NAN;
+static bool g_temp_expired = false;
 void  temp_init_sensor()      {}
-float temp_get_temperature()  { return g_temp; }
+TemperatureReading temp_get_temperature() { return {g_temp, g_temp_expired}; }
 
 // --- display (no-op; update_display calls are counted) ----------------------
 
@@ -303,6 +304,7 @@ void set_configuration(const char* /*uuid*/, const char* /*mac*/,
 bool         get_feature_uuid_by_name(char* featureUuid, size_t max_len, const char* name);
 JsonDocument buildFeatures();
 void         read_temp_sensor_value();
+void         loop();
 void         send_online_status();
 void         publish_alarm(const char* feature_name, const char* alarm_type, float value);
 void         alarms_init();
@@ -341,6 +343,7 @@ extern JsonArray    saved_features;
 extern char         saved_device_uuid[37];
 extern AlarmID_t    alarm_temp;
 extern AlarmID_t    alarm_online;
+extern bool         sensor_fault;
 extern int          thermostat_mode;
 extern int          prev_thermostat_mode;
 extern bool         fan_requested_active;
@@ -396,6 +399,8 @@ protected:
     Alarm.reset();
 
     g_temp        = NAN;
+    g_temp_expired = false;
+    sensor_fault = false;
     g_setpoint    = 20.0f;
     g_tolerance   =  5.0f;
     g_wifi_status = WL_CONNECTED;
@@ -1268,3 +1273,82 @@ TEST_F(MainInoTest, WifiPollingEntersCooldownOnlyAfterTimedPollBudgetIsSpent) {
   EXPECT_EQ(conn_state, CONN_COOLDOWN);
   EXPECT_GT(conn_cooldown_until_ms, millis());
 }
+
+// Accepted-measurement timeout must override control in both build modes.
+TEST_F(MainInoTest, ExpiredMeasurementStopsSelectedOutputsAndLatches) {
+#if OPERATING_MODE == 1
+  g_temp = 12.0f;
+#else
+  g_temp = 28.0f;
+#endif
+  read_temp_sensor_value();
+#if OPERATING_MODE == 1
+  ASSERT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_ON);
+#else
+  ASSERT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_ON);
+  ASSERT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_ON);
+#endif
+  MqttNotifyCapture::reset();
+  g_temp_expired = true; // Sensor still returns its old finite cached value.
+  read_temp_sensor_value();
+  ASSERT_TRUE(sensor_fault);
+  EXPECT_TRUE(MqttNotifyCapture::instance().calls.empty());
+  g_temp_expired = false; // A later accepted read must not restart control.
+  GpioMockState::reset();
+  read_temp_sensor_value();
+  EXPECT_TRUE(sensor_fault);
+#if OPERATING_MODE == 1
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values.count(PIN_COLD), 0u);
+  EXPECT_EQ(GpioMockState::instance().pin_values.count(PIN_PUMP), 0u);
+  EXPECT_EQ(GpioMockState::instance().pin_values.count(PIN_FAN), 0u);
+#else
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values.count(PIN_HEAT), 0u);
+#endif
+}
+
+TEST_F(MainInoTest, NoAcceptedStartupMeasurementLatchesFaultAndKeepsOutputsOff) {
+  g_temp = NAN;
+  g_temp_expired = true;
+  read_temp_sensor_value();
+  ASSERT_TRUE(sensor_fault);
+#if OPERATING_MODE == 1
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_HEAT], HEAT_OFF);
+#else
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN], FAN_OFF);
+#endif
+}
+
+#if OPERATING_MODE == 0
+TEST_F(MainInoTest, SensorFaultServicesFanDeadlineInLoopWithoutFurtherSensorReads) {
+  g_temp = 28.0f;
+  read_temp_sensor_value();
+  ASSERT_EQ(GpioMockState::instance().pin_values[PIN_FAN], FAN_ON);
+  g_temp = NAN;
+  g_temp_expired = true;
+  read_temp_sensor_value();
+  ASSERT_TRUE(sensor_fault);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN],
+            FAN_TURN_OFF_DELAY_SECONDS > 0 ? FAN_ON : FAN_OFF);
+
+  // Prevent connectivity work from invoking extra temperature reads.
+  g_wifi_status = 0; // Disconnected in the WiFi mock.
+  conn_next_attempt_ms = 10000000UL;
+#if FAN_TURN_OFF_DELAY_SECONDS > 0
+  const unsigned long deadline = fan_turn_off_at_ms;
+  mock_advance_millis(FAN_TURN_OFF_DELAY_SECONDS * 1000UL - 1);
+  loop();
+  EXPECT_EQ(fan_turn_off_at_ms, deadline); // Repeated OFF must not postpone it.
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN], FAN_ON);
+  mock_advance_millis(1);
+#endif
+  loop();
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_FAN], FAN_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_COLD], COLD_OFF);
+  EXPECT_EQ(GpioMockState::instance().pin_values[PIN_PUMP], PUMP_OFF);
+}
+#endif

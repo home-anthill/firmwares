@@ -7,7 +7,8 @@
 
 // Optional GPIO button for display power saving/restart controls.
 // When false, the display stays on and the button pin is not configured.
-#define DISPLAY_BUTTON_ENABLED true
+// For thermostat this is the suggested configuration and display will always be on!
+#define DISPLAY_BUTTON_ENABLED false
 #define DISPLAY_BUTTON_PIN 42
 
 // I2C configuration
@@ -19,7 +20,7 @@
 
 // Specific device configuration
 // Output GPIOs. Preserve the external inactive-level bias on each output.
-// ESP32-S2 / ESP32-S3 mapping (also used by host tests).
+// ESP32-S3 mapping (also used by host tests).
 #define HEAT 5
 #define COLD 6
 #define FAN 7
@@ -32,7 +33,7 @@
 
 // Relay/output polarity. true = active LOW, false = active HIGH.
 #define HOT_ACTIVE_LOW false
-#define COLD_ACTIVE_LOW false
+#define COLD_ACTIVE_LOW true
 #define FAN_ACTIVE_LOW false
 #define PUMP_ACTIVE_LOW false
 
@@ -41,6 +42,13 @@
 
 // Keep FAN physically on for this many seconds after thermostat logic turns it off.
 #define FAN_TURN_OFF_DELAY_SECONDS 240
+
+// Maximum deviation from the accepted temperature history average (percent).
+// 0 disables the deviation check; nonfinite readings are always rejected.
+#define TEMP_VALID_MAX_DEVIATION_PERCENT 30
+
+// Maximum age of an accepted temperature before shutdown (seconds).
+#define TEMP_MAX_ACCEPTED_AGE_SECONDS 60
 
 // Cooling safety checks:
 // Cooling safety checks used only when OPERATING_MODE is 0. These checks do

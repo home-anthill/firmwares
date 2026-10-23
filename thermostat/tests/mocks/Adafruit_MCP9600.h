@@ -10,8 +10,8 @@
 // Usage:
 //   TempSensorMockState::reset();
 //   TempSensorMockState::instance().thermocouple_value = 23.5f;
-//   float t = temp_get_temperature();
-//   EXPECT_FLOAT_EQ(t, 23.5f);
+//   TemperatureReading reading = temp_get_temperature();
+//   EXPECT_FLOAT_EQ(reading.value, 23.5f);
 // ---------------------------------------------------------------------------
 
 #include <cstdint>
@@ -54,6 +54,9 @@ typedef enum {
 
 struct TempSensorMockState {
   bool    begin_result{true};
+  uint8_t device_id{0x40};
+  uint8_t expected_device_id{0};
+  uint8_t begin_address{0};
   float   thermocouple_value{22.0f};
   float   ambient_value{20.0f};
   int32_t adc_value{0};
@@ -75,9 +78,12 @@ struct TempSensorMockState {
 
 class Adafruit_MCP9600 {
 public:
-  bool begin(uint8_t /*addr*/) {
-    TempSensorMockState::instance().init_called = true;
-    return TempSensorMockState::instance().begin_result;
+  bool begin(uint8_t addr) {
+    auto& state = TempSensorMockState::instance();
+    state.init_called = true;
+    state.begin_address = addr;
+    state.expected_device_id = _device_id;
+    return state.begin_result && state.device_id == _device_id;
   }
 
   void setAmbientResolution(Ambient_Resolution /*res*/)     {}
@@ -118,4 +124,7 @@ public:
   int32_t readADC() {
     return TempSensorMockState::instance().adc_value;
   }
+protected:
+  uint8_t _device_id{0x40};
+
 };

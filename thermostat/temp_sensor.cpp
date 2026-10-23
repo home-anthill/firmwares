@@ -1,22 +1,22 @@
 // include Arduino library to use Arduino function in cpp files
 #include <Arduino.h>
+#include <Wire.h>
 
 #include <math.h>
 #include <string.h>
 
-// Thermocouple MCP9600
-// include specific libraries:
-// - OneWire: https://github.com/PaulStoffregen/OneWire
-// - DallasTemperature: https://github.com/milesburton/Arduino-Temperature-Control-Library
-#include <Adafruit_I2CDevice.h>
-#include <Adafruit_I2CRegister.h>
-#include "Adafruit_MCP9600.h"
+#include <Adafruit_MCP9600.h>
 
 #include "config.h"
 #include "secrets.h"
+#include "temp_sensor.h"
 
 #ifndef THERMOCOUPLE_TYPE
 #define THERMOCOUPLE_TYPE "K"
+#endif
+
+#if !defined(TEMP_MAX_ACCEPTED_AGE_SECONDS) || TEMP_MAX_ACCEPTED_AGE_SECONDS <= 0 || TEMP_MAX_ACCEPTED_AGE_SECONDS > 3600
+#error "TEMP_MAX_ACCEPTED_AGE_SECONDS must be defined and between 1 and 3600"
 #endif
 
 #define I2C_ADDRESS (0x67)
@@ -28,11 +28,16 @@ Ambient_Resolution ambientRes = RES_ZERO_POINT_0625;
 // easy to disturb with motor/relay noise. Keep a short history of accepted
 // values and reject sudden outliers, returning the last valid value instead.
 const size_t TEMP_VALID_HISTORY_SIZE = 10;
-const float TEMP_VALID_MAX_DEVIATION_PERCENT = 20.0f;
+#ifndef TEMP_VALID_MAX_DEVIATION_PERCENT
+#define TEMP_VALID_MAX_DEVIATION_PERCENT 20
+#endif
+static_assert(TEMP_VALID_MAX_DEVIATION_PERCENT >= 0,
+              "TEMP_VALID_MAX_DEVIATION_PERCENT must be greater than or equal to 0");
 float temp_valid_history[TEMP_VALID_HISTORY_SIZE] = {};
 size_t temp_valid_history_count = 0;
 size_t temp_valid_history_index = 0;
 float last_temp_valid_value = NAN;
+static uint32_t last_accepted_ms = 0;
 
 static auto configured_thermocouple_type() {
   if (strcmp(THERMOCOUPLE_TYPE, "K") == 0) return MCP9600_TYPE_K;
@@ -67,6 +72,7 @@ static void set_temp_valid_value(float value) {
     temp_valid_history_count++;
   }
   last_temp_valid_value = value;
+  last_accepted_ms = static_cast<uint32_t>(millis());
 }
 
 static void reset_valid_temp_history() {
@@ -76,11 +82,16 @@ static void reset_valid_temp_history() {
   temp_valid_history_count = 0;
   temp_valid_history_index = 0;
   last_temp_valid_value = NAN;
+  last_accepted_ms = 0;
 }
 
 static bool is_temp_reading_is_accettable(float value) {
-  if (isnan(value)) {
+  if (!isfinite(value)) {
     return false;
+  }
+
+  if (TEMP_VALID_MAX_DEVIATION_PERCENT == 0) {
+    return true;
   }
 
   // Bootstrap: without accepted history there is no trustworthy avg yet.
@@ -158,20 +169,24 @@ void temp_init_sensor() {
   Serial.println(F("------------------------------"));
 }
 
-float temp_get_temperature() {
+TemperatureReading temp_get_temperature() {
   float thermocouple = mcp.readThermocouple();
   float ambient = mcp.readAmbient();
   int32_t adc = mcp.readADC() * 2;
-  Serial.print("Hot Junction: "); Serial.println(thermocouple);
-  Serial.print("Cold Junction: "); Serial.println(ambient);
-  Serial.print("ADC: "); Serial.print(adc); Serial.println(" uV");
+  Serial.print("Hot Junction: ");
+  Serial.println(thermocouple);
+  Serial.print("Cold Junction: ");
+  Serial.println(ambient);
+  Serial.print("ADC: ");
+  Serial.print(adc);
+  Serial.println(" uV");
 
   // Use the raw value only when it agrees with the accepted recent history.
   // If something external produces a sudden spike, keep controlling with the last
   // valid value so one or more bad reads do not flip the GPIO outputs.
   if (is_temp_reading_is_accettable(thermocouple)) {
     set_temp_valid_value(thermocouple);
-    return thermocouple;
+    return {thermocouple, false};
   }
 
   Serial.print("temp_get_temperature - rejected bad thermocouple reading: ");
@@ -182,5 +197,7 @@ float temp_get_temperature() {
   Serial.print(last_temp_valid_value);
   Serial.println(" C");
 
-  return last_temp_valid_value;
+  const uint32_t max_age_ms = static_cast<uint32_t>(TEMP_MAX_ACCEPTED_AGE_SECONDS) * 1000UL;
+  const uint32_t age_ms = static_cast<uint32_t>(millis()) - last_accepted_ms;
+  return {last_temp_valid_value, temp_valid_history_count == 0 || age_ms >= max_age_ms};
 }

@@ -37,6 +37,7 @@ void feature_values_load_saved();
 void feature_values_init_saved_features();
 void record_command_values(uint8_t* payload, unsigned int length);
 void read_temp_sensor_value();
+void apply_sensor_fault_outputs();
 void send_online_status();
 void publish_sensor_value(const char* feature_name, float value);
 void publish_alarm(const char* feature_name, const char* alarm_type, float value);
@@ -80,6 +81,9 @@ constexpr int THERMOSTAT_MODE_HEAT = 2;
 
 int thermostat_mode = THERMOSTAT_MODE_SLEEP;
 int prev_thermostat_mode = THERMOSTAT_MODE_SLEEP;
+// Sensor fault is independent of the optional cooling-rise fault and latches
+// until reboot. Normal control must never restart outputs after this latch.
+bool sensor_fault = false;
 
 #if OPERATING_MODE == 0
 // A COLD output may drive a conventional cooler or a Peltier module. A Peltier
@@ -345,9 +349,28 @@ void publish_alarm(const char* feature_name, const char* alarm_type, float value
   }
 }
 
+void apply_sensor_fault_outputs() {
+#if OPERATING_MODE == 1
+  write_heat_output(false);
+#else
+  write_cold_output(false);
+  write_pump_output(false);
+  write_fan_output(false);
+#endif
+}
+
 void read_temp_sensor_value() {
   Serial.println("read_temp_sensor_value - called");
-  float temp = temp_get_temperature();
+  const TemperatureReading reading = temp_get_temperature();
+  if (reading.expired && !sensor_fault) {
+    sensor_fault = true;
+    Serial.println("read_temp_sensor_value - accepted temperature expired; sensor fault latched until reboot");
+  }
+  if (sensor_fault) {
+    apply_sensor_fault_outputs();
+    return;
+  }
+  const float temp = reading.value;
   if (isnan(temp)) {
     Serial.println("read_temp_sensor_value - error reading temperature!");
   } else {
@@ -888,6 +911,11 @@ void handle_connectivity() {
 }
 
 void loop() {
+  if (sensor_fault) {
+    // Service cooldown even when subsequent sensor reads fail. Repeated OFF
+    // requests do not extend the existing fan deadline.
+    apply_sensor_fault_outputs();
+  }
   handle_connectivity();
 
   if (mqtt_client.connected()) {

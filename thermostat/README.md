@@ -9,7 +9,7 @@ temperature and runtime mode transitions when MQTT is connected.
 Use an ESP32, MCP9600 at `0x67`, a matching thermocouple (K by default), and
 suitable HEAT/COLD/FAN/PUMP drivers and thermal hardware.
 
-| Connection | ESP32-S2/S3
+| Connection | ESP32-S3
 |---|---|
 | MCP9600 SDA / SCL | GPIO39 / GPIO40
 | Thermocouple + / − | MCP9600 terminals, correct type/polarity
@@ -20,9 +20,11 @@ suitable HEAT/COLD/FAN/PUMP drivers and thermal hardware.
 
 ### Configuration
 
+This project includes its own `config.h`; edit it directly. No config template is required.
+
 Edit `thermostat/config.h` to match your wiring. Set `OLED_DISPLAY=false` if no
 display is fitted. Current defaults: `OPERATING_MODE=0` (cooling), FAN cooldown
-60 seconds, and both cooling rise checks disabled (`0`). Set `OPERATING_MODE=1`
+240 seconds, and both cooling rise checks disabled (`0`). Set `OPERATING_MODE=1`
 for heating; other values fail compilation.
 
 ## Supported features
@@ -479,7 +481,7 @@ When cooling stops, the first `write_fan_output(false)` call does this:
 
 ```text
 fan_requested_active: true -> false
-fan_turn_off_at_ms = now + 120 seconds
+fan_turn_off_at_ms = now + FAN_TURN_OFF_DELAY_SECONDS
 FAN remains physically ON
 ```
 
@@ -491,7 +493,8 @@ at/after deadline: FAN turns OFF
 ```
 
 Because temperature is sampled every 5 seconds, normal fan shutdown can occur
-up to about one sample period after the 120-second deadline.
+up to about one sample period after the configured deadline. After a sensor
+fault, `loop()` services the deadline independently of temperature samples.
 
 ### Startup and reboot sequence
 
@@ -556,15 +559,28 @@ configuration commands are not part of the protocol.
 At 18 bits, the MCP9600 has a typical 320 ms conversion plus 20 ms calculation. Actual thermal settling depends on the
 probe, fluid, installation, and cold junction; there is no fixed readiness gate.
 
-**Sensor failure can leave the selected outputs energized
-indefinitely.** `read_temp_sensor_value()` only logs when it receives `NaN`;
-it does not turn outputs off. Also, `temp_get_temperature()` returns the last
-accepted value after rejecting a later bad reading, with no maximum age or
-consecutive-failure limit. A disconnected, frozen, or noisy sensor can keep
-control operating from stale data. The cooling rise checks do not solve a
-frozen sensor because an unchanged stale value appears flat and therefore
-passes by design. A pending fan deadline is also not serviced while readings
-remain `NaN`, so FAN can remain on.
+`TEMP_VALID_MAX_DEVIATION_PERCENT` in `config.h` sets the allowed deviation
+from the average of the last 10 accepted temperatures (default **20%**).
+The allowed absolute difference is `abs(average) * percentage / 100`.
+Set it to `0` to disable this deviation check and accept every finite reading;
+negative settings fail compilation. NaN and infinity are always rejected.
+This filter is independent of the two cooling-rise checks.
+
+Accepted readings refresh an age timestamp, including unchanged temperatures.
+Rejected readings return the cached temperature without refreshing it. When its
+age reaches `TEMP_MAX_ACCEPTED_AGE_SECONDS` (default **15 seconds**), the next
+temperature read latches a sensor fault until reboot: HEAT turns off in heating mode; COLD/PUMP turn off
+in cooling mode. FAN follows `FAN_TURN_OFF_DELAY_SECONDS`, serviced in `loop()`
+even if temperature reads keep failing; zero delay turns it off immediately.
+No accepted startup measurement also latches the fault and keeps outputs off.
+Normal control cannot restart outputs after the fault, even if readings recover.
+
+Set the positive timeout in `config.h` for the actual installation. This guards
+against prolonged software-cache reuse, not every sensor failure: the Adafruit
+driver does not reliably expose I2C errors or confirm new conversions. A frozen
+but accepted reading can keep refreshing the timestamp. There is no shutdown
+based solely on an unchanged temperature. The sensor-fault latch is separate
+from runtime `mode` and does not introduce a new published mode value.
 
 Connectivity retries are bounded and non-blocking; exhausted attempts enter a
 12-hour cooldown before reboot. Local temperature alarms continue meanwhile.
@@ -589,9 +605,7 @@ arduino-cli lib install "Adafruit GFX Library"@1.12.6 \
 Prepare credentials if missing:
 
 ```sh
-if [ ! -f thermostat/secrets.h ]; then
-  cp secret-template thermostat/secrets.h
-fi
+cp secrets-template thermostat/secrets.h
 # Edit thermostat/secrets.h: WiFi, MODEL, admission and MQTT settings.
 arduino-cli compile --fqbn esp32:esp32:esp32s3 ./thermostat/thermostat.ino
 ```

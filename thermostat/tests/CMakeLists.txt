@@ -109,7 +109,7 @@ target_link_libraries(test_display
 # ---------------------------------------------------------------------------
 add_executable(test_temp_sensor
   test_temp_sensor.cpp
-  ../temp_sensor.cpp
+  temp_sensor_wrapper.cpp
 )
 
 target_include_directories(test_temp_sensor PRIVATE
@@ -120,6 +120,15 @@ target_include_directories(test_temp_sensor PRIVATE
 target_link_libraries(test_temp_sensor
   GTest::gtest_main
 )
+
+# Verify the default, disabled, and custom deviation settings independently.
+foreach(percent IN ITEMS 0 20 30)
+  add_executable(test_temp_sensor_${percent} test_temp_sensor.cpp temp_sensor_wrapper.cpp)
+  target_include_directories(test_temp_sensor_${percent} PRIVATE mocks ..)
+  target_compile_definitions(test_temp_sensor_${percent} PRIVATE
+    HOME_ANTHILL_TEST_TEMP_VALID_MAX_DEVIATION_PERCENT=${percent})
+  target_link_libraries(test_temp_sensor_${percent} GTest::gtest_main)
+endforeach()
 
 # ---------------------------------------------------------------------------
 # Test executable: controller
@@ -183,6 +192,8 @@ add_executable(test_main_ino
   main_ino_wrapper.cpp   # thin .cpp that #includes thermostat.ino
 )
 configure_main_ino_test(test_main_ino 0)
+target_compile_definitions(test_main_ino PRIVATE
+  HOME_ANTHILL_TEST_COOLING_SHORT_RISE_CHECK_SECONDS=120 HOME_ANTHILL_TEST_COOLING_WIDE_RISE_CHECK_SECONDS=600)
 
 add_executable(test_main_ino_heat
   test_main_ino.cpp
@@ -195,10 +206,18 @@ foreach(variant IN ITEMS no_short no_wide no_rise_checks)
   add_executable(test_main_ino_${variant} test_main_ino.cpp main_ino_wrapper.cpp)
   configure_main_ino_test(test_main_ino_${variant} 0)
 endforeach()
-target_compile_definitions(test_main_ino_no_short PRIVATE COOLING_SHORT_RISE_CHECK_SECONDS=0)
-target_compile_definitions(test_main_ino_no_wide PRIVATE COOLING_WIDE_RISE_CHECK_SECONDS=0)
+target_compile_definitions(test_main_ino_no_short PRIVATE
+  HOME_ANTHILL_TEST_COOLING_SHORT_RISE_CHECK_SECONDS=0 HOME_ANTHILL_TEST_COOLING_WIDE_RISE_CHECK_SECONDS=600)
+target_compile_definitions(test_main_ino_no_wide PRIVATE
+  HOME_ANTHILL_TEST_COOLING_SHORT_RISE_CHECK_SECONDS=120 HOME_ANTHILL_TEST_COOLING_WIDE_RISE_CHECK_SECONDS=0)
 target_compile_definitions(test_main_ino_no_rise_checks PRIVATE
-  COOLING_SHORT_RISE_CHECK_SECONDS=0 COOLING_WIDE_RISE_CHECK_SECONDS=0)
+  HOME_ANTHILL_TEST_COOLING_SHORT_RISE_CHECK_SECONDS=0 HOME_ANTHILL_TEST_COOLING_WIDE_RISE_CHECK_SECONDS=0)
+
+add_executable(test_main_ino_no_fan_delay test_main_ino.cpp main_ino_wrapper.cpp)
+configure_main_ino_test(test_main_ino_no_fan_delay 0)
+target_compile_definitions(test_main_ino_no_fan_delay PRIVATE
+  HOME_ANTHILL_TEST_COOLING_SHORT_RISE_CHECK_SECONDS=0 HOME_ANTHILL_TEST_COOLING_WIDE_RISE_CHECK_SECONDS=0
+  HOME_ANTHILL_TEST_FAN_TURN_OFF_DELAY_SECONDS=0)
 
 # ---------------------------------------------------------------------------
 # Register tests with CTest
@@ -215,3 +234,8 @@ add_test(NAME main_ino_heat_tests COMMAND test_main_ino_heat)
 add_test(NAME main_ino_no_short_tests COMMAND test_main_ino_no_short)
 add_test(NAME main_ino_no_wide_tests COMMAND test_main_ino_no_wide)
 add_test(NAME main_ino_no_rise_checks_tests COMMAND test_main_ino_no_rise_checks)
+add_test(NAME main_ino_no_fan_delay_tests COMMAND test_main_ino_no_fan_delay)
+
+foreach(percent IN ITEMS 0 20 30)
+  add_test(NAME temp_sensor_${percent}_tests COMMAND test_temp_sensor_${percent})
+endforeach()

@@ -1,5 +1,10 @@
 #pragma once
 
-void temp_init_sensor();
+struct TemperatureReading {
+  float value;
+  // No accepted measurement yet, or the cached value reached its age limit.
+  bool expired;
+};
 
-float temp_get_temperature();
+void temp_init_sensor();
+TemperatureReading temp_get_temperature();

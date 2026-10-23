@@ -42,6 +42,8 @@ for the raw ADC register.
 
 ### Configuration
 
+This project includes its own `config.h`; edit it directly. No config template is required.
+
 Edit `thermostat-mcp9600-simulator/config.h` to match your wiring.
 
 OLED support is enabled by default. If no display is connected, startup logs one warning and the

@@ -7,6 +7,7 @@
 #include <PubSubClient.h>
 // include the TimeAlarms library (https://www.arduino.cc/reference/en/libraries/timealarms/)
 #include <TimeAlarms.h>
+#include <cmath>
 
 // must be the first, before any internal include
 #include "config.h"
@@ -63,7 +64,7 @@ bool get_feature_uuid_by_name(char* featureUuid, size_t max_len, const char* nam
 
 void read_and_send_ph_value() {
   const PhReading reading = ph_read();
-  if (!isfinite(reading.ph)) {
+  if (!std::isfinite(reading.ph)) {
     Serial.println("read_and_send_ph_value - no valid calibrated measurement");
     return;
   }

@@ -34,6 +34,13 @@ TEST_F(MqttHandlerTest, NotifyValueUsesSensorTopicFormat) {
   EXPECT_EQ(MqttMockState::instance().last_publish_topic, "sensors/dev-uuid/humidity");
 }
 
+TEST_F(MqttHandlerTest, NotifyIndexValuesUseKebabCaseTopics) {
+  mqtt_notify_value("dev-uuid", "feat-uuid", "vocIndex", 123.4f);
+  EXPECT_EQ(MqttMockState::instance().last_publish_topic, "sensors/dev-uuid/voc-index");
+  mqtt_notify_value("dev-uuid", "feat-uuid", "noxIndex", 234.5f);
+  EXPECT_EQ(MqttMockState::instance().last_publish_topic, "sensors/dev-uuid/nox-index");
+}
+
 TEST_F(MqttHandlerTest, NotifyValueUsesOnlineTopicForOnlineType) {
   mqtt_notify_value("dev-uuid", "feat-uuid", "online", 1.0f);
   EXPECT_EQ(MqttMockState::instance().last_publish_topic,

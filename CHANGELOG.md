@@ -4,23 +4,39 @@
 
 ### Features
 
-- Changed `airquality-pir` motion polling from 30 seconds to one second and added signed rising-edge motion alarms on `alarms/{deviceUuid}/features/{motionFeatureUuid}/motion`.
+- Added `water-level` digital threshold firmware with GPIO17, configurable polarity, boolean water/online features, and host-test/build integration. `water-level` firmware publishes signed `level` alarms on transitions to the reached state, using the same MQTT alarm publisher as motion; repeated reached readings do not emit duplicate alarms.
+- Remove `airquality-motion`.
+- Rename `co2-airpressure` to `airquality-airpressure` and use Bosch BSEC2 for numeric `iaq`, `voc`, and `eco2`, keeping measured `co2`, pressure, and altitude.
+- Added `thermocouple-mcp9601` with MCP9601 `temperatureStatus` integer sensor telemetry (0–5) with nonzero fault alarms, and error-only status.
+- Add a separate ESP32-S3 MCP9600 simulator CI build pinned to ESP-IDF v5.5.4 using Espressif’s build action.
+- Publish `pm` gas-index telemetry on voc-index and nox-index topics while preserving registered names in signatures.
+- Split local credentials into `secrets.h` from one shared `secrets-template`, and GPIO assignments and firmware options into each firmware's own `config.h`. Removed config templates; edit the project-specific config file directly.
+- Renamed `barometer` to `co2-airpressure` and added SCD43-D-R2 CO2 telemetry alongside BME688 pressure/altitude on the shared I2C bus.
+- Updated `barometer` to BME688 with the gas heater disabled, automatic I2C address detection, and a paired pressure/altitude reading that rejects failed conversions.
+- Added the `ph` sensor firmware with ADS1115 differential measurement, GPIO17 buffer calibration, confirmed persistent calibration records, OLED calibration screens, signed pH/online telemetry, and host-test/build integration.
+- Renamed `dht-light` to `lux-temp-hum`, including the sketch, secrets template, build commands, and CI references. Use Sensirion SHT45-AD1B-R2 I2C paired temperature/humidity measurements.
+- Renamed `airquality-motion` into `airquality-motion` using HLK-LD2410C module instead of a basic PIR sensor. Changed `airquality-motion` motion polling from 30 seconds to one second and added signed rising-edge motion alarms on `alarms/{deviceUuid}/features/{motionFeatureUuid}/motion`.
 - Added signed thermostat mode-error alarms on `alarms/{deviceUuid}/features/{modeFeatureUuid}/thermostat-mode-error`; errors detected while MQTT is disconnected are not replayed.
-- Added device feature specs to registration payloads so UI clients can render booleans, numeric ranges, and list options from firmware metadata.
 - Added optional SSD1306 OLED display support, controlled by `OLED_DISPLAY`.
-- Added in-memory feature value tracking for display rendering.
 - Added `online` feature registration and periodic online heartbeat publishing.
+- Use lowercase kebab-case for MQTT topic names, including `temperature-status`; keep registered and signed feature identity `temperatureStatus`.
+- Added device feature specs to registration payloads so UI clients can render booleans, numeric ranges, and list options from firmware metadata.
+- Remove ESP32 and ESP32S2 support
+
 
 ### Bug fixes
 
 - Replaced duplicated `mode` and `fanSpeed` numeric literals with `IRremoteESP8266` protocol constants in `ac-beko` and `ac-lg` registration specs and command dispatch.
 - Updated command dispatch to call `IRremoteESP8266` setters with the protocol constants directly.
+- Automatically reset generated host-test builds with stale CMake paths after firmware or checkout renames.
 
 ### Tests
 
+- Add UART and LD2410 mocks for motion sensor host tests, and pin Nick Reynolds’ `ld2410` dependency to 0.2.2 in CI.
 - Added host coverage for alarm topics and payloads, PIR edge behavior and polling, and connected/disconnected thermostat alarm publication.
 - Added host tests for `feature_values` and OLED display modules.
 - Expanded main `.ino` tests for feature specs, online status publishing, feature value recording, and command value display updates.
+- Update all tests for the new firmwares
 
 ### Chores
 

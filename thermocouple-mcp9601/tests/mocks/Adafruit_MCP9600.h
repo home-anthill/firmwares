@@ -123,6 +123,6 @@ public:
     return TempSensorMockState::instance().adc_value;
   }
 protected:
-  uint8_t _device_id{0x41};
+  uint8_t _device_id{0x40};
 
 };

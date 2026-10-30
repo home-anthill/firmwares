@@ -197,7 +197,10 @@ void mqtt_notify_value(const char* device_uuid, const char* feature_uuid, const 
   if (strcmp(type, "online") == 0) {
     snprintf(topic, sizeof(topic), "online/%s/features/%s", device_uuid, feature_uuid);
   } else {
-    snprintf(topic, sizeof(topic), "sensors/%s/%s", device_uuid, type);
+    const char* topic_type = type;
+    if (strcmp(type, "vocIndex") == 0) topic_type = "voc-index";
+    else if (strcmp(type, "noxIndex") == 0) topic_type = "nox-index";
+    snprintf(topic, sizeof(topic), "sensors/%s/%s", device_uuid, topic_type);
   }
   Serial.printf("mqtt_notify_value - publishing topic=%s\n", topic);
   if (!mqtt_client.publish(topic, payload_to_send)) {

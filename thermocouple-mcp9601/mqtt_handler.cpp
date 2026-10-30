@@ -19,6 +19,27 @@
 #include "secrets.h"
 
 // private functions
+static void mqtt_publish_signed_value(const char* device_uuid, const char* feature_uuid, const char* type, float value, const char* topic);
+
+void mqtt_notify_value(const char* device_uuid, const char* feature_uuid, const char* type, float value) {
+  char topic[128];
+  if (strcmp(type, "online") == 0) {
+    snprintf(topic, sizeof(topic), "online/%s/features/%s", device_uuid, feature_uuid);
+  } else {
+    // Keep the registered feature name for signing; only the MQTT topic uses kebab-case.
+    const char* topic_name = strcmp(type, "temperatureStatus") == 0 ? "temperature-status" : type;
+    snprintf(topic, sizeof(topic), "sensors/%s/%s", device_uuid, topic_name);
+  }
+  mqtt_publish_signed_value(device_uuid, feature_uuid, type, value, topic);
+}
+
+void mqtt_notify_alarm(const char* device_uuid, const char* feature_uuid, const char* feature_name,
+                       const char* alarm_type, float value) {
+  char topic[160];
+  snprintf(topic, sizeof(topic), "alarms/%s/features/%s/%s", device_uuid, feature_uuid, alarm_type);
+  mqtt_publish_signed_value(device_uuid, feature_uuid, feature_name, value, topic);
+}
+
 void mqtt_subscribe(const char* uuid, const char* command);
 
 const char* mqtt_url = MQTT_URL;
@@ -148,7 +169,7 @@ void mqtt_connect(const char* uuid) {
   }
 }
 
-void mqtt_notify_value(const char* device_uuid, const char* feature_uuid, const char* type, float value) {
+static void mqtt_publish_signed_value(const char* device_uuid, const char* feature_uuid, const char* type, float value, const char* topic) {
   Serial.printf("mqtt_notify_value - called with device_uuid=%s, feature_uuid=%s, type=%s, value=%.2f\n", device_uuid, feature_uuid, type, value);
   
   char payload_to_send[768];
@@ -193,12 +214,6 @@ void mqtt_notify_value(const char* device_uuid, const char* feature_uuid, const 
   }
   Serial.printf("mqtt_notify_value - payload_to_send=%s\n", payload_to_send);
 
-  char topic[128];
-  if (strcmp(type, "online") == 0) {
-    snprintf(topic, sizeof(topic), "online/%s/features/%s", device_uuid, feature_uuid);
-  } else {
-    snprintf(topic, sizeof(topic), "sensors/%s/%s", device_uuid, type);
-  }
   Serial.printf("mqtt_notify_value - publishing topic=%s\n", topic);
   if (!mqtt_client.publish(topic, payload_to_send)) {
     Serial.printf("mqtt_notify_value - publish failed for topic=%s, forcing disconnect to trigger reconnect\n", topic);

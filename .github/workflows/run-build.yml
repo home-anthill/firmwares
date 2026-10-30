@@ -20,17 +20,13 @@ on:
 
 jobs:
   build:
-    strategy:
-        matrix:
-          esp-devices: [esp32, esp32s2, esp32s3]
-
     name: Run and test
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install Arduino CLI
         uses: arduino/setup-arduino-cli@v2
@@ -48,7 +44,7 @@ jobs:
           arduino-cli core update-index
           arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
           arduino-cli core update-index
-          arduino-cli core install esp32:esp32@3.3.7
+          arduino-cli core install esp32:esp32@3.3.12
 
       - name: Install libraries
         run: |
@@ -64,50 +60,62 @@ jobs:
 
           # specific libs to aquire physical measures
           arduino-cli lib install "Adafruit Unified Sensor"@1.1.15
-          arduino-cli lib install "DHT sensor library"@1.4.6
-          arduino-cli lib install "XENSIV Digital Pressure Sensor"@1.0.2
-          arduino-cli lib install "Grove - Air quality sensor"@1.0.2
-          arduino-cli lib install "Grove - Digital Light Sensor"@2.0.0
+          arduino-cli lib install "Sensirion I2C SHT4x"@1.1.2
+          arduino-cli lib install "Sensirion I2C SEN65"@1.1.0
+          arduino-cli lib install "Sensirion I2C SCD4x"@1.1.0
+          arduino-cli lib install "bsec2"@1.10.2610
+          arduino-cli lib install "ld2410"@0.2.2
+          arduino-cli lib install "Adafruit TSL2591 Library"@1.4.5
+
+          arduino-cli lib install "Adafruit ADS1X15"@2.6.2
 
           # specific libs for devices
           arduino-cli lib install "IRremoteESP8266"@2.9.0
 
           # specific libs for thermostat
           arduino-cli lib install "Adafruit GFX Library"@1.12.6
-          arduino-cli lib install "Adafruit SSD1306"@2.5.16
+          arduino-cli lib install "Adafruit SSD1306"@2.5.17
           arduino-cli lib install "Adafruit BusIO"@1.17.4
           arduino-cli lib install "Adafruit MCP9600 Library"@2.0.4
 
       # to get a list of FQBN you can run: `arduino-cli board listall`
-      - name: Building firmwares for ${{ matrix.esp-devices }}
+      - name: Building firmwares
         run: |
-          # Prepare sensor.h files based on `secrets-template`, because
-          # we don't need real config files to build all firmwares in CI.
-          cp secrets-template airquality-pir/secrets.h
-          cp secrets-template barometer/secrets.h
-          cp secrets-template dht-light/secrets.h
-          cp secrets-template ac-beko/secrets.h
-          cp secrets-template ac-lg/secrets.h
-          cp secrets-thermostat-template thermostat/secrets.h
+          # Prepare credentials
+          for fw in motion airquality-airpressure lux-temp-hum pm ph water-level ac-beko ac-lg thermostat thermocouple-mcp9601; do
+            cp secrets-template "$fw/secrets.h"
+          done
 
           # build
-          cd airquality-pir
-          arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./airquality-pir.ino
+          cd motion
+          arduino-cli compile --fqbn esp32:esp32:esp32s3 ./motion.ino
           cd ..
-          cd barometer
-          arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./barometer.ino
+          cd airquality-airpressure
+          arduino-cli compile --fqbn esp32:esp32:esp32s3 ./airquality-airpressure.ino
           cd ..
-          cd dht-light
-          arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./dht-light.ino
+          cd lux-temp-hum
+          arduino-cli compile --fqbn esp32:esp32:esp32s3 ./lux-temp-hum.ino
+          cd ..
+          cd pm
+          arduino-cli compile --fqbn esp32:esp32:esp32s3 ./pm.ino
+          cd ..
+          cd ph
+          arduino-cli compile --fqbn esp32:esp32:esp32s3 ./ph.ino
+          cd ..
+          cd water-level
+          arduino-cli compile --fqbn esp32:esp32:esp32s3 ./water-level.ino
           cd ..
           cd ac-beko
-          arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./ac-beko.ino
+          arduino-cli compile --fqbn esp32:esp32:esp32s3 ./ac-beko.ino
           cd ..
           cd ac-lg
-          arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./ac-lg.ino
+          arduino-cli compile --fqbn esp32:esp32:esp32s3 ./ac-lg.ino
+          cd ..
+          cd thermocouple-mcp9601
+          arduino-cli compile --fqbn esp32:esp32:esp32s3 ./thermocouple-mcp9601.ino
           cd ..
           cd thermostat
-          arduino-cli compile --fqbn esp32:esp32:${{ matrix.esp-devices }} ./thermostat.ino
+          arduino-cli compile --fqbn esp32:esp32:esp32s3 ./thermostat.ino
           cd ..
   unit-tests:
     name: Unit tests (host)
@@ -116,25 +124,53 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
-      - name: Copy secrets template to all firmwares
+      - name: Prepare firmware headers
         run: |
-          # Prepare sensor.h files based on `secrets-template`, because
-          # we don't need real config files to build all firmwares in CI.
-          cp secrets-template airquality-pir/secrets.h
-          cp secrets-template barometer/secrets.h
-          cp secrets-template dht-light/secrets.h
-          cp secrets-template ac-beko/secrets.h
-          cp secrets-template ac-lg/secrets.h
-          cp secrets-thermostat-template thermostat/secrets.h
+          # Prepare credentials
+          for fw in motion airquality-airpressure lux-temp-hum pm ph water-level ac-beko ac-lg thermostat thermocouple-mcp9601; do
+            cp secrets-template "$fw/secrets.h"
+          done
 
       - name: Build and run unit tests
         run: |
-          for fw in airquality-pir barometer dht-light ac-beko ac-lg thermostat; do
+          for fw in motion airquality-airpressure lux-temp-hum pm ph water-level ac-beko ac-lg thermostat thermocouple-mcp9601; do
             echo "::group::$fw"
             cmake -S $fw/tests -B $fw/tests/build
             cmake --build $fw/tests/build --parallel
             ctest --test-dir $fw/tests/build --output-on-failure
             echo "::endgroup::"
           done
+
+  simulator-build:
+    name: MCP9600 simulator (ESP-IDF, ESP32-S3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Build MCP9600 simulator
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.4
+          target: esp32s3
+          path: thermostat-mcp9600-simulator
+
+  mcp9601-simulator-build:
+    name: MCP9601 simulator (ESP-IDF, ESP32-S3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Build MCP9601 simulator
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.4
+          target: esp32s3
+          path: thermocouple-mcp9601-simulator

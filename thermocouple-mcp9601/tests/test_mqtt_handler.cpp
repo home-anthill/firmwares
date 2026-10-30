@@ -34,6 +34,11 @@ TEST_F(MqttHandlerTest, NotifyValueUsesSensorTopicFormat) {
   EXPECT_EQ(MqttMockState::instance().last_publish_topic, "sensors/dev-uuid/humidity");
 }
 
+TEST_F(MqttHandlerTest, TemperatureStatusUsesKebabCaseTopic) {
+  mqtt_notify_value("dev", "feat", "temperatureStatus", 2);
+  EXPECT_EQ(MqttMockState::instance().last_publish_topic, "sensors/dev/temperature-status");
+}
+
 TEST_F(MqttHandlerTest, NotifyValueUsesOnlineTopicForOnlineType) {
   mqtt_notify_value("dev-uuid", "feat-uuid", "online", 1.0f);
   EXPECT_EQ(MqttMockState::instance().last_publish_topic,
@@ -108,4 +113,22 @@ TEST_F(MqttHandlerTest, ConnectHappyPath) {
   EXPECT_EQ(MqttMockState::instance().last_connect_user, MQTT_USERNAME);
   EXPECT_EQ(MqttMockState::instance().last_connect_pass, MQTT_PASSWORD);
   EXPECT_EQ(MqttMockState::instance().last_subscribe_topic, "devices/my-device-uuid/values");
+}
+
+TEST_F(MqttHandlerTest, AlarmUsesSignedEnvelopeAndFeatureTopic) {
+  mqtt_notify_alarm("dev", "feat", "temperatureStatus", "temperature-status", 2);
+  EXPECT_EQ(MqttMockState::instance().last_publish_topic,
+            "alarms/dev/features/feat/temperature-status");
+  JsonDocument doc;
+  ASSERT_FALSE(deserializeJson(doc, MqttMockState::instance().last_publish_payload));
+  EXPECT_STREQ(doc["deviceUuid"], "dev");
+  EXPECT_STREQ(doc["featureUuid"], "feat");
+  EXPECT_EQ(doc["payload"]["value"].as<float>(), 2);
+  EXPECT_EQ(doc["signature"].as<std::string>().size(), 64);
+  EXPECT_FALSE(doc["apiToken"].is<const char*>());
+}
+TEST_F(MqttHandlerTest, AlarmDisconnectsOnPublishFailure) {
+  MqttMockState::instance().publish_result = false;
+  mqtt_notify_alarm("dev", "feat", "temperatureStatus", "temperature-status", 1);
+  EXPECT_EQ(MqttMockState::instance().disconnect_count, 1);
 }

@@ -21,6 +21,8 @@ the signal.
 
 ### Configuration
 
+This project includes its own `config.h`; edit it directly. No config template is required.
+
 Edit `water-level/config.h` to match your wiring. Set `OLED_DISPLAY=false` if no
 display is fitted.
 
@@ -66,9 +68,7 @@ arduino-cli lib install "Adafruit GFX Library"@1.12.6 \
 Prepare credentials if missing:
 
 ```sh
-if [ ! -f water-level/secrets.h ]; then
-  cp secrets-template water-level/secrets.h
-fi
+cp secrets-template water-level/secrets.h
 # Edit water-level/secrets.h: WiFi, MODEL, admission and MQTT settings.
 arduino-cli compile --fqbn esp32:esp32:esp32s3 ./water-level/water-level.ino
 ```

@@ -20,6 +20,8 @@ resets the sensor, waits 1200 ms, and starts continuous measurement.
 
 ### Configuration
 
+This project includes its own `config.h`; edit it directly. No config template is required.
+
 Edit `pm/config.h` to match your wiring. Set `OLED_DISPLAY=false` if no
 display is fitted.
 
@@ -81,9 +83,7 @@ arduino-cli lib install "Adafruit GFX Library"@1.12.6 \
 Prepare credentials if missing:
 
 ```sh
-if [ ! -f pm/secrets.h ]; then
-  cp secrets-template pm/secrets.h
-fi
+cp secrets-template pm/secrets.h
 # Edit pm/secrets.h: WiFi, MODEL, admission and MQTT settings.
 arduino-cli compile --fqbn esp32:esp32:esp32s3 ./pm/pm.ino
 ```
@@ -104,3 +104,5 @@ cmake -S pm/tests -B pm/tests/build
 cmake --build pm/tests/build --parallel
 ctest --test-dir pm/tests/build --output-on-failure
 ```
+
+Gas-index MQTT topics use `voc-index` and `nox-index`; registrations and signed feature identities remain `vocIndex` and `noxIndex`.

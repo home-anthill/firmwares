@@ -21,6 +21,8 @@ bare electrode directly to the ADC. Reference: [ADS1115 datasheet](https://www.t
 
 ### Configuration
 
+This project includes its own `config.h`; edit it directly. No config template is required.
+
 Edit `ph/config.h` to match your wiring. Set `OLED_DISPLAY=false` if no
 display is fitted.
 
@@ -84,9 +86,7 @@ arduino-cli lib install "Adafruit GFX Library"@1.12.6 \
 Prepare credentials if missing:
 
 ```sh
-if [ ! -f ph/secrets.h ]; then
-  cp secrets-template ph/secrets.h
-fi
+cp secrets-template ph/secrets.h
 # Edit ph/secrets.h: WiFi, MODEL, admission and MQTT settings.
 arduino-cli compile --fqbn esp32:esp32:esp32s3 ./ph/ph.ino
 ```

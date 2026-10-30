@@ -104,9 +104,15 @@ void display_show_message(const char*, const char*) {}
 void display_set_connectivity_status(bool, bool) {}
 void display_sleep_for(unsigned long) {}
 
+static std::vector<NotifyCall> alarm_calls;
+void mqtt_notify_alarm(const char* device, const char* feature, const char* name,
+                       const char* type, float value) {
+  alarm_calls.push_back({device, feature, type, value});
+}
+static TempSensorError sample_error = TEMP_SENSOR_OK;
 static float sample = 23;
 void temp_init_sensor() {}
-float temp_get_temperature() { return sample; }
+TempSensorReading temp_get_temperature() { return {sample, sample_error}; }
 
 // --- feature_values ---------------------------------------------------------
 
@@ -190,35 +196,149 @@ class TemperaturePublishTest : public ::testing::Test {
     MqttNotifyCapture::reset();
     FeatureValueCapture::reset();
     sample = 23;
+    sample_error = TEMP_SENSOR_OK;
+    MqttMockState::reset();
+    read_and_send_temperature();
+    MqttNotifyCapture::reset();
+    FeatureValueCapture::reset();
+    alarm_calls.clear();
   }
 };
 
-TEST_F(TemperaturePublishTest, RegistersTemperatureAndOnline) {
-  ASSERT_EQ(saved_features.size(), 2);
+// Temporarily disabled with temperatureStatus MQTT telemetry and alarms.
+/*
+TEST_F(TemperaturePublishTest, RegistersTemperatureStatusAndOnline) {
+  ASSERT_EQ(saved_features.size(), 3);
   EXPECT_STREQ(saved_features[0]["name"].as<const char*>(), "temperature");
-  EXPECT_STREQ(saved_features[1]["name"].as<const char*>(), "online");
+  EXPECT_STREQ(saved_features[1]["name"].as<const char*>(), "temperatureStatus");
+  EXPECT_STREQ(saved_features[1]["spec"]["format"].as<const char*>(), "int");
+  EXPECT_EQ(saved_features[1]["spec"]["min"].as<int>(), 0);
+  EXPECT_EQ(saved_features[1]["spec"]["max"].as<int>(), 5);
+  EXPECT_EQ(saved_features[1]["spec"]["step"].as<int>(), 1);
+  EXPECT_STREQ(saved_features[2]["name"].as<const char*>(), "online");
   EXPECT_FLOAT_EQ(saved_features[0]["spec"]["min"].as<float>(), -200);
   EXPECT_FLOAT_EQ(saved_features[0]["spec"]["max"].as<float>(), 1372);
-  EXPECT_FLOAT_EQ(saved_features[0]["spec"]["step"].as<float>(), 0.0625);
 }
-TEST_F(TemperaturePublishTest, PublishesTemperature) {
+TEST_F(TemperaturePublishTest, PublishesHealthyStatusAndTemperature) {
   read_and_send_temperature();
-  ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 1);
-  EXPECT_EQ(MqttNotifyCapture::instance().calls[0].type, "temperature");
-  EXPECT_FLOAT_EQ(MqttNotifyCapture::instance().calls[0].value, 23);
+  const auto& calls = MqttNotifyCapture::instance().calls;
+  ASSERT_EQ(calls.size(), 2);
+  EXPECT_EQ(calls[0].type, "temperatureStatus");
+  EXPECT_EQ(calls[0].feature_uuid, "feature-1");
+  EXPECT_FLOAT_EQ(calls[0].value, 0);
+  EXPECT_EQ(calls[1].type, "temperature");
+  EXPECT_FLOAT_EQ(calls[1].value, 23);
+  EXPECT_TRUE(alarm_calls.empty());
 }
-TEST_F(TemperaturePublishTest, SkipsInvalidAndUnregisteredTemperature) {
+TEST_F(TemperaturePublishTest, InvalidReadingsPublishOnlyStatus) {
   sample = NAN;
+  sample_error = TEMP_SENSOR_INVALID_READING;
   read_and_send_temperature();
-  sample = INFINITY;
-  read_and_send_temperature();
-  sample = 23;
-  saved_features.remove(0);
+  const auto& calls = MqttNotifyCapture::instance().calls;
+  ASSERT_EQ(calls.size(), 1);
+  EXPECT_EQ(calls[0].type, "temperatureStatus");
+  EXPECT_FLOAT_EQ(calls[0].value, 5);
+}
+TEST_F(TemperaturePublishTest, MissingStatusFeatureCannotUseTemperatureUuidForAlarms) {
+  saved_features.remove(1);
+  sample = NAN;
+  sample_error = TEMP_SENSOR_OPEN_CIRCUIT;
+  MqttMockState::instance().connected_val = true;
   read_and_send_temperature();
   EXPECT_TRUE(MqttNotifyCapture::instance().calls.empty());
+  EXPECT_TRUE(alarm_calls.empty());
 }
 TEST_F(TemperaturePublishTest, PublishesOnline) {
   send_online_status();
   ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 1);
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].type, "online");
+}
+TEST_F(TemperaturePublishTest, FaultTransitionsNotifyButRepeatedSamplesOnlyPersistStatus) {
+  MqttMockState::instance().connected_val = true;
+  for (auto error : {TEMP_SENSOR_INIT_ERROR, TEMP_SENSOR_OPEN_CIRCUIT,
+                     TEMP_SENSOR_SHORT_CIRCUIT, TEMP_SENSOR_OPEN_AND_SHORT,
+                     TEMP_SENSOR_INVALID_READING}) {
+    sample = NAN;
+    sample_error = error;
+    const auto count = alarm_calls.size();
+    read_and_send_temperature();
+    read_and_send_temperature();
+    ASSERT_EQ(alarm_calls.size(), count + 1);
+    EXPECT_EQ(alarm_calls.back().type, "temperature-status");
+    EXPECT_EQ(alarm_calls.back().feature_uuid, "feature-1");
+    EXPECT_EQ(alarm_calls.back().value, error);
+  }
+  ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 10);
+  sample = 23;
+  sample_error = TEMP_SENSOR_OK;
+  read_and_send_temperature();
+  ASSERT_EQ(alarm_calls.size(), 5);
+  const auto& calls = MqttNotifyCapture::instance().calls;
+  EXPECT_EQ(calls[calls.size() - 2].type, "temperatureStatus");
+  EXPECT_EQ(calls[calls.size() - 2].value, 0);
+  sample = NAN;
+  sample_error = TEMP_SENSOR_INVALID_READING;
+  read_and_send_temperature();
+  EXPECT_EQ(alarm_calls.size(), 6);
+}
+TEST_F(TemperaturePublishTest, SkipsOfflineFaultAlarms) {
+  sample = NAN;
+  sample_error = TEMP_SENSOR_OPEN_CIRCUIT;
+  MqttMockState::instance().connected_val = false;
+  read_and_send_temperature();
+  EXPECT_TRUE(alarm_calls.empty());
+}
+void publish_initial_values();
+TEST_F(TemperaturePublishTest, ReconnectSendsHealthyTelemetryWithoutAlarmAndReannouncesFault) {
+  MqttMockState::instance().connected_val = true;
+  publish_initial_values();
+  EXPECT_TRUE(alarm_calls.empty());
+  EXPECT_EQ(MqttNotifyCapture::instance().calls[0].value, 0);
+  sample = NAN;
+  sample_error = TEMP_SENSOR_OPEN_CIRCUIT;
+  publish_initial_values();
+  publish_initial_values();
+  ASSERT_EQ(alarm_calls.size(), 2);
+  EXPECT_EQ(alarm_calls.back().value, TEMP_SENSOR_OPEN_CIRCUIT);
+}
+
+*/
+
+TEST_F(TemperaturePublishTest, RegistersOnlyTemperatureAndOnline) {
+  ASSERT_EQ(saved_features.size(), 2);
+  EXPECT_STREQ(saved_features[0]["name"].as<const char*>(), "temperature");
+  EXPECT_STREQ(saved_features[1]["name"].as<const char*>(), "online");
+}
+
+TEST_F(TemperaturePublishTest, PublishesOnlyTemperature) {
+  read_and_send_temperature();
+  const auto& calls = MqttNotifyCapture::instance().calls;
+  ASSERT_EQ(calls.size(), 1);
+  EXPECT_EQ(calls[0].type, "temperature");
+  EXPECT_FLOAT_EQ(calls[0].value, 23);
+  EXPECT_TRUE(alarm_calls.empty());
+}
+
+TEST_F(TemperaturePublishTest, FaultsDoNotPublishStatusOrAlarms) {
+  MqttMockState::instance().connected_val = true;
+  for (auto error : {TEMP_SENSOR_INIT_ERROR, TEMP_SENSOR_OPEN_CIRCUIT,
+                     TEMP_SENSOR_SHORT_CIRCUIT, TEMP_SENSOR_OPEN_AND_SHORT,
+                     TEMP_SENSOR_INVALID_READING}) {
+    sample = NAN;
+    sample_error = error;
+    read_and_send_temperature();
+  }
+  EXPECT_TRUE(MqttNotifyCapture::instance().calls.empty());
+  EXPECT_TRUE(alarm_calls.empty());
+}
+
+void publish_initial_values();
+TEST_F(TemperaturePublishTest, ReconnectPublishesTemperatureAndOnlineOnly) {
+  MqttMockState::instance().connected_val = true;
+  publish_initial_values();
+  const auto& calls = MqttNotifyCapture::instance().calls;
+  ASSERT_EQ(calls.size(), 2);
+  EXPECT_EQ(calls[0].type, "temperature");
+  EXPECT_EQ(calls[1].type, "online");
+  EXPECT_TRUE(alarm_calls.empty());
 }

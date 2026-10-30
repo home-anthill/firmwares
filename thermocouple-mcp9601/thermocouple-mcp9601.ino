@@ -63,8 +63,30 @@ bool get_feature_uuid_by_name(char* featureUuid, size_t max_len, const char* nam
   return false;
 }
 
+// Temporarily disabled: temperatureStatus MQTT telemetry and alarms.
+// static TempSensorError previous_temperature_error = TEMP_SENSOR_OK;
+// static bool temperature_status_pending = false;
+
 void read_and_send_temperature() {
-  const float value = temp_get_temperature();
+  const TempSensorReading reading = temp_get_temperature();
+  const float value = reading.temperature;
+  const TempSensorError error = reading.error;
+  Serial.printf("temperatureStatus: %d\n", static_cast<int>(error));
+  // Temporarily disabled: report status only on Serial.
+  // feature_values_set("temperatureStatus", error);
+  // char status_feature_uuid[37];
+  // if (get_feature_uuid_by_name(status_feature_uuid, sizeof(status_feature_uuid), "temperatureStatus")) {
+  //   // Persist every status sample, including recovery, through the normal sensor pipeline.
+  //   mqtt_notify_value(saved_device_uuid, status_feature_uuid, "temperatureStatus", error);
+  //   if ((temperature_status_pending || error != previous_temperature_error) && error != TEMP_SENSOR_OK && mqtt_client.connected()) {
+  //     // in case of a new error send it via mqtt as alarm
+  //     mqtt_notify_alarm(saved_device_uuid, status_feature_uuid, "temperatureStatus", "temperature-status", error);
+  //   }
+  // } else {
+  //   Serial.println("temperatureStatus feature missing; re-register this device");
+  // }
+  // previous_temperature_error = error;
+  // temperature_status_pending = false;
   if (!isfinite(value)) {
     return;
   }
@@ -89,6 +111,8 @@ void send_online_status() {
 
 void publish_initial_values() {
   Serial.println("publish_initial_values - called");
+  // Temporarily disabled: reannounce status alarms after reconnect.
+  // temperature_status_pending = true;
   read_and_send_temperature();
   send_online_status();
 }
@@ -135,11 +159,22 @@ JsonDocument buildFeatures() {
   temperature["spec"]["max"] = 1372;
   temperature["spec"]["step"] = 0.0625;
 
+  // JsonObject temperature_status = array.add<JsonObject>();
+  // temperature_status["type"] = "sensor";
+  // temperature_status["name"] = "temperatureStatus";
+  // temperature_status["enable"] = true;
+  // temperature_status["order"] = 2;
+  // temperature_status["unit"] = "-";
+  // temperature_status["spec"]["format"] = "int";
+  // temperature_status["spec"]["min"] = 0;
+  // temperature_status["spec"]["max"] = 5;
+  // temperature_status["spec"]["step"] = 1;
+
   JsonObject online = array.add<JsonObject>();
   online["type"] = "sensor";
   online["name"] = "online";
   online["enable"] = true;
-  online["order"] = 2;
+  online["order"] = 3;
   online["unit"] = "-";
   online["spec"]["format"] = "bool";
 
@@ -152,21 +187,21 @@ void setup() {
 
   Serial.println("setup - starting...");
   init_display(DISPLAY_BUTTON_PIN);
-  
+
   // 0. configure hardware
-  rgbLedWrite(BOARD_RGB_LED_PIN, 0, 0, 0); 
+  rgbLedWrite(BOARD_RGB_LED_PIN, 0, 0, 0);
   // set time to Saturday 00:00:00am Jan 1 2025
   setTime(0, 0, 0, 1, 1, 25);
 
-  // 1. prepare wifi_client
-  //    If SSL is enabled, add root ca to wifi_client to be used for secure connections
-  //    This root ca will be used by all network components like mqtt and htpp
-  # if SSL==true
-    Serial.println("setup - running with SSL enabled");
-    wifi_init_ca();
-  # else 
-    Serial.println("setup - running WITHOUT SSL");
-  # endif
+// 1. prepare wifi_client
+//    If SSL is enabled, add root ca to wifi_client to be used for secure connections
+//    This root ca will be used by all network components like mqtt and htpp
+#if SSL == true
+  Serial.println("setup - running with SSL enabled");
+  wifi_init_ca();
+#else
+  Serial.println("setup - running WITHOUT SSL");
+#endif
 
   // 2. init MQTT client
   //    init mqtt_client with wifi_client (previously configured)
@@ -185,11 +220,11 @@ void setup() {
   Serial.println("setup - registering this device...");
   JsonDocument features = buildFeatures();
   int result = -1;
-  # if SSL==true
-    result = register_secure_server(wifi_client, mac_address, features);
-  # else 
-    result = register_insecure_server(wifi_client, mac_address, features);
-  # endif
+#if SSL == true
+  result = register_secure_server(wifi_client, mac_address, features);
+#else
+  result = register_insecure_server(wifi_client, mac_address, features);
+#endif
   Serial.printf("setup - register returned result = %d\n", result);
   if (result != 0) {
     Serial.printf("setup - register error, returned result = %d\n", result);
@@ -217,7 +252,7 @@ void setup() {
 
   // 7. read features array from preferences
   //    if it's the first boot, it will be the same already stored in global variable 'saved_features',
-  //    because already filled during the registration process. 
+  //    because already filled during the registration process.
   //    Otherwise, it reads the existing features array form preferences,
   //    because registration won't return the UUID again.
   Serial.println("setup - getting features array from preferences...");

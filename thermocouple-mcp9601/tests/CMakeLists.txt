@@ -126,6 +126,7 @@ add_executable(test_temp_sensor test_temp_sensor.cpp ../temp_sensor.cpp)
 target_include_directories(test_temp_sensor PRIVATE mocks ..)
 target_link_libraries(test_temp_sensor GTest::gtest_main)
 
+
 # ---------------------------------------------------------------------------
 # Test executable: main_ino
 #
@@ -161,3 +162,13 @@ add_test(NAME feature_values_tests COMMAND test_feature_values)
 add_test(NAME display_tests       COMMAND test_display)
 add_test(NAME temp_sensor_tests COMMAND test_temp_sensor)
 add_test(NAME main_ino_tests   COMMAND test_main_ino)
+
+# Exercise every probe type on the MCP9601 driver.
+foreach(probe K J T N S E B R)
+  set(sensor_target test_temp_sensor_${probe})
+  add_executable(${sensor_target} test_temp_sensor.cpp ../temp_sensor.cpp)
+  target_include_directories(${sensor_target} PRIVATE mocks ..)
+  target_compile_definitions(${sensor_target} PRIVATE "THERMOCOUPLE_TYPE='${probe}'")
+  target_link_libraries(${sensor_target} GTest::gtest_main)
+  add_test(NAME temp_sensor_${probe}_tests COMMAND ${sensor_target})
+endforeach()

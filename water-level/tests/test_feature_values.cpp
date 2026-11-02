@@ -2,7 +2,7 @@
 
 #include <ArduinoJson.h>
 
-#include "feature_values.h"
+#include <HomeAnthillCore.h>
 
 class FeatureValuesTest : public ::testing::Test {
 protected:
@@ -31,7 +31,7 @@ protected:
 
 TEST_F(FeatureValuesTest, InitCreatesOneEntryPerFeatureWithoutValues) {
   JsonDocument doc;
-  feature_values_init(makeFeatures(doc));
+  ha::feature_values_init(makeFeatures(doc), false);
 
   EXPECT_EQ(feature_values_count(), 3u);
 
@@ -54,7 +54,7 @@ TEST_F(FeatureValuesTest, InitCreatesOneEntryPerFeatureWithoutValues) {
 
 TEST_F(FeatureValuesTest, SetUpdatesExistingFeatureValue) {
   JsonDocument doc;
-  feature_values_init(makeFeatures(doc));
+  ha::feature_values_init(makeFeatures(doc), false);
 
   EXPECT_TRUE(feature_values_set("temperature", 23.5f));
 
@@ -67,7 +67,7 @@ TEST_F(FeatureValuesTest, SetUpdatesExistingFeatureValue) {
 
 TEST_F(FeatureValuesTest, SetDoesNotCreateUnknownFeature) {
   JsonDocument doc;
-  feature_values_init(makeFeatures(doc));
+  ha::feature_values_init(makeFeatures(doc), false);
 
   EXPECT_FALSE(feature_values_set("unknown", 1.0f));
   EXPECT_EQ(feature_values_count(), 3u);
@@ -75,7 +75,7 @@ TEST_F(FeatureValuesTest, SetDoesNotCreateUnknownFeature) {
 
 TEST_F(FeatureValuesTest, GetRejectsInvalidInputs) {
   JsonDocument doc;
-  feature_values_init(makeFeatures(doc));
+  ha::feature_values_init(makeFeatures(doc), false);
 
   FeatureValue value = {};
   EXPECT_FALSE(feature_values_get(3, &value));
@@ -93,7 +93,7 @@ TEST_F(FeatureValuesTest, InitSkipsFeaturesWithoutNames) {
   named["name"] = "light";
   named["unit"] = "lux";
 
-  feature_values_init(features);
+  ha::feature_values_init(features, false);
 
   EXPECT_EQ(feature_values_count(), 1u);
   FeatureValue value = {};
@@ -109,7 +109,7 @@ TEST_F(FeatureValuesTest, InitSkipsOnlineFeature) {
   online["name"] = "online";
   online["unit"] = "-";
 
-  feature_values_init(features);
+  ha::feature_values_init(features, false);
 
   EXPECT_EQ(feature_values_count(), 3u);
   EXPECT_FALSE(feature_values_set("online", 1.0f));

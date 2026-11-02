@@ -9,10 +9,10 @@
 #include "HTTPClient.h"
 
 #include <ArduinoJson.h>
-#include "storage.h"
-#include "registration.h"
+#include <HomeAnthillCore.h>
 #include "config.h"
 #include "secrets.h"
+#include <HomeAnthillConfig.h>
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -54,7 +54,7 @@ protected:
 
 TEST_F(RegistrationTest, ConflictReturnsZeroWithoutStorageWrite) {
   HttpMockConfig::instance().response_code = HTTP_CODE_CONFLICT;
-  EXPECT_EQ(register_insecure_server(wifi_client, kMac, features_doc), 0);
+  EXPECT_EQ(ha::register_server(wifi_client, kMac, features_doc, registration_config, true), 0);
 
   char buf[37] = {};
   EXPECT_EQ(storage_get_uuid(buf), 0u);  // nothing written to storage
@@ -68,7 +68,7 @@ TEST_F(RegistrationTest, OkResponseRegistersAndStoresData) {
   HttpMockConfig::instance().response_code = HTTP_CODE_OK;
   HttpMockConfig::instance().response_body = valid_response();
 
-  EXPECT_EQ(register_insecure_server(wifi_client, kMac, features_doc), 0);
+  EXPECT_EQ(ha::register_server(wifi_client, kMac, features_doc, registration_config, true), 0);
 
   // UUID saved to storage
   char buf[37] = {};
@@ -96,10 +96,10 @@ TEST_F(RegistrationTest, OkResponseRegistersAndStoresData) {
 
 TEST_F(RegistrationTest, ReturnsOneOnBadHttpStatus) {
   HttpMockConfig::instance().response_code = 500;
-  EXPECT_EQ(register_insecure_server(wifi_client, kMac, features_doc), 1);
+  EXPECT_EQ(ha::register_server(wifi_client, kMac, features_doc, registration_config, true), 1);
 
   HttpMockConfig::instance().response_code = 401;
-  EXPECT_EQ(register_insecure_server(wifi_client, kMac, features_doc), 1);
+  EXPECT_EQ(ha::register_server(wifi_client, kMac, features_doc, registration_config, true), 1);
 }
 
 // ===========================================================================
@@ -109,7 +109,7 @@ TEST_F(RegistrationTest, ReturnsOneOnBadHttpStatus) {
 TEST_F(RegistrationTest, ReturnsThreeOnMalformedJson) {
   HttpMockConfig::instance().response_code = HTTP_CODE_OK;
   HttpMockConfig::instance().response_body = "not-json{{{";
-  EXPECT_EQ(register_insecure_server(wifi_client, kMac, features_doc), 3);
+  EXPECT_EQ(ha::register_server(wifi_client, kMac, features_doc, registration_config, true), 3);
 }
 
 TEST_F(RegistrationTest, ReturnsThreeWhenRequiredFieldsMissingFromResponse) {
@@ -118,14 +118,14 @@ TEST_F(RegistrationTest, ReturnsThreeWhenRequiredFieldsMissingFromResponse) {
   // uuid absent
   HttpMockConfig::instance().response_body =
     R"({"mac":"aa:bb:cc:dd:ee:ff","manufacturer":"ks89","model":"ac-beko","features":[]})";
-  EXPECT_EQ(register_insecure_server(wifi_client, kMac, features_doc), 3);
+  EXPECT_EQ(ha::register_server(wifi_client, kMac, features_doc, registration_config, true), 3);
 
   // mac absent
   HttpMockConfig::reset();
   HttpMockConfig::instance().response_code = HTTP_CODE_OK;
   HttpMockConfig::instance().response_body =
     R"({"uuid":"test-uuid-0000-0000-000000000000","manufacturer":"ks89","model":"ac-beko","features":[]})";
-  EXPECT_EQ(register_insecure_server(wifi_client, kMac, features_doc), 3);
+  EXPECT_EQ(ha::register_server(wifi_client, kMac, features_doc, registration_config, true), 3);
 }
 
 // ===========================================================================
@@ -138,15 +138,15 @@ TEST_F(RegistrationTest, ReturnsFourOnResponseMismatch) {
   // mac mismatch
   HttpMockConfig::instance().response_body =
     R"({"uuid":"test-uuid-0000-0000-000000000000","mac":"ff:ff:ff:ff:ff:ff","manufacturer":"ks89","model":"ac-beko","features":[]})";
-  EXPECT_EQ(register_insecure_server(wifi_client, kMac, features_doc), 4);
+  EXPECT_EQ(ha::register_server(wifi_client, kMac, features_doc, registration_config, true), 4);
 
   // manufacturer mismatch
   HttpMockConfig::instance().response_body =
     R"({"uuid":"test-uuid-0000-0000-000000000000","mac":"aa:bb:cc:dd:ee:ff","manufacturer":"wrong","model":"ac-beko","features":[]})";
-  EXPECT_EQ(register_insecure_server(wifi_client, kMac, features_doc), 4);
+  EXPECT_EQ(ha::register_server(wifi_client, kMac, features_doc, registration_config, true), 4);
 
   // model mismatch
   HttpMockConfig::instance().response_body =
     R"({"uuid":"test-uuid-0000-0000-000000000000","mac":"aa:bb:cc:dd:ee:ff","manufacturer":"ks89","model":"wrong-model","features":[]})";
-  EXPECT_EQ(register_insecure_server(wifi_client, kMac, features_doc), 4);
+  EXPECT_EQ(ha::register_server(wifi_client, kMac, features_doc, registration_config, true), 4);
 }

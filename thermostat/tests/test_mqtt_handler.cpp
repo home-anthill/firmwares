@@ -7,9 +7,10 @@
 #include "PubSubClient.h"
 
 #include <ArduinoJson.h>
-#include "mqtt_handler.h"
+#include <HomeAnthillCore.h>
 #include "config.h"
 #include "secrets.h"  // provides API_TOKEN, MQTT_USERNAME, MQTT_PASSWORD
+#include <HomeAnthillConfig.h>
 
 // ---------------------------------------------------------------------------
 // Fixture — resets mock state before every test.
@@ -27,18 +28,18 @@ protected:
 // ===========================================================================
 
 TEST_F(MqttHandlerTest, NotifyValueUsesSensorTopicFormat) {
-  mqtt_notify_value("dev-uuid", "feat-uuid", "temperature", 23.5f);
+  ha::mqtt_notify_value("dev-uuid", "feat-uuid", "temperature", 23.5f, mqtt_config);
   EXPECT_EQ(MqttMockState::instance().last_publish_topic, "sensors/dev-uuid/temperature");
 }
 
 TEST_F(MqttHandlerTest, NotifyValueUsesOnlineTopicForOnlineType) {
-  mqtt_notify_value("dev-uuid", "feat-uuid", "online", 1.0f);
+  ha::mqtt_notify_value("dev-uuid", "feat-uuid", "online", 1.0f, mqtt_config);
   EXPECT_EQ(MqttMockState::instance().last_publish_topic,
             "online/dev-uuid/features/feat-uuid");
 }
 
 TEST_F(MqttHandlerTest, NotifyAlarmUsesThermostatModeErrorTopic) {
-  mqtt_notify_alarm("dev-uuid", "mode-feature-uuid", "mode", "thermostat-mode-error", -1.0f);
+  ha::mqtt_notify_alarm("dev-uuid", "mode-feature-uuid", "mode", "thermostat-mode-error", -1.0f, mqtt_config);
 
   EXPECT_EQ(MqttMockState::instance().last_publish_topic,
             "alarms/dev-uuid/features/mode-feature-uuid/thermostat-mode-error");
@@ -51,7 +52,7 @@ TEST_F(MqttHandlerTest, NotifyAlarmUsesThermostatModeErrorTopic) {
 // ===========================================================================
 
 TEST_F(MqttHandlerTest, NotifyValuePayloadStructure) {
-  mqtt_notify_value("dev-uuid", "feature-uuid-456", "temperature", 23.5f);
+  ha::mqtt_notify_value("dev-uuid", "feature-uuid-456", "temperature", 23.5f, mqtt_config);
 
   JsonDocument doc;
   deserializeJson(doc, MqttMockState::instance().last_publish_payload);
@@ -65,7 +66,7 @@ TEST_F(MqttHandlerTest, NotifyValuePayloadStructure) {
 }
 
 TEST_F(MqttHandlerTest, NotifyValuePayloadEncodesNegativeValue) {
-  mqtt_notify_value("dev-uuid", "feat-uuid", "temperature", -5.0f);
+  ha::mqtt_notify_value("dev-uuid", "feat-uuid", "temperature", -5.0f, mqtt_config);
 
   JsonDocument doc;
   deserializeJson(doc, MqttMockState::instance().last_publish_payload);
@@ -73,14 +74,14 @@ TEST_F(MqttHandlerTest, NotifyValuePayloadEncodesNegativeValue) {
 }
 
 TEST_F(MqttHandlerTest, NotifyValuePayloadKeepsFloatIntegerDecimalForRustCanonicalForm) {
-  mqtt_notify_value("dev-uuid", "feat-uuid", "temperature", 22.0f);
+  ha::mqtt_notify_value("dev-uuid", "feat-uuid", "temperature", 22.0f, mqtt_config);
 
   EXPECT_NE(MqttMockState::instance().last_publish_payload.find(R"("payload":{"value":22.0})"),
             std::string::npos);
 }
 
 TEST_F(MqttHandlerTest, NotifyModeValuePayloadUsesFloatRepresentation) {
-  mqtt_notify_value("dev-uuid", "feat-uuid", "mode", -1.0f);
+  ha::mqtt_notify_value("dev-uuid", "feat-uuid", "mode", -1.0f, mqtt_config);
 
   EXPECT_NE(MqttMockState::instance().last_publish_payload.find(R"("payload":{"value":-1.0})"),
             std::string::npos);
@@ -89,7 +90,7 @@ TEST_F(MqttHandlerTest, NotifyModeValuePayloadUsesFloatRepresentation) {
 }
 
 TEST_F(MqttHandlerTest, NotifyValuePayloadTrimsUnneededTrailingDecimalZeros) {
-  mqtt_notify_value("dev-uuid", "feat-uuid", "temperature", 22.2500f);
+  ha::mqtt_notify_value("dev-uuid", "feat-uuid", "temperature", 22.2500f, mqtt_config);
 
   EXPECT_NE(MqttMockState::instance().last_publish_payload.find(R"("payload":{"value":22.25})"),
             std::string::npos);
@@ -101,13 +102,13 @@ TEST_F(MqttHandlerTest, NotifyValuePayloadTrimsUnneededTrailingDecimalZeros) {
 
 TEST_F(MqttHandlerTest, NotifyValueDisconnectsOnPublishFailure) {
   MqttMockState::instance().publish_result = false;
-  mqtt_notify_value("dev-uuid", "feat-uuid", "temperature", 23.5f);
+  ha::mqtt_notify_value("dev-uuid", "feat-uuid", "temperature", 23.5f, mqtt_config);
   EXPECT_EQ(MqttMockState::instance().disconnect_count, 1);
 }
 
 TEST_F(MqttHandlerTest, NotifyValueDoesNotDisconnectOnPublishSuccess) {
   MqttMockState::instance().publish_result = true;
-  mqtt_notify_value("dev-uuid", "feat-uuid", "temperature", 23.5f);
+  ha::mqtt_notify_value("dev-uuid", "feat-uuid", "temperature", 23.5f, mqtt_config);
   EXPECT_EQ(MqttMockState::instance().disconnect_count, 0);
 }
 
@@ -117,7 +118,7 @@ TEST_F(MqttHandlerTest, NotifyValueDoesNotDisconnectOnPublishSuccess) {
 // ===========================================================================
 
 TEST_F(MqttHandlerTest, ConnectHappyPath) {
-  mqtt_connect("my-device-uuid");
+  ha::mqtt_connect("my-device-uuid", mqtt_config);
 
   EXPECT_EQ(MqttMockState::instance().last_connect_id,   "my-device-uuid");
   EXPECT_EQ(MqttMockState::instance().last_connect_user, MQTT_USERNAME);
@@ -132,7 +133,7 @@ TEST_F(MqttHandlerTest, ConnectHappyPath) {
 TEST_F(MqttHandlerTest, TryConnectOnceReturnsTrueAndSubscribesOnSuccess) {
   MqttMockState::instance().connect_result = true;
 
-  bool result = mqtt_try_connect_once("my-device-uuid");
+  bool result = ha::mqtt_try_connect_once("my-device-uuid", mqtt_config);
 
   EXPECT_TRUE(result);
   EXPECT_EQ(MqttMockState::instance().last_connect_id, "my-device-uuid");
@@ -143,7 +144,7 @@ TEST_F(MqttHandlerTest, TryConnectOnceReturnsTrueAndSubscribesOnSuccess) {
 TEST_F(MqttHandlerTest, TryConnectOnceReturnsFalseOnFailure) {
   MqttMockState::instance().connect_result = false;
 
-  bool result = mqtt_try_connect_once("my-device-uuid");
+  bool result = ha::mqtt_try_connect_once("my-device-uuid", mqtt_config);
 
   EXPECT_FALSE(result);
   // No subscription should be attempted on failure.

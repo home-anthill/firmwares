@@ -35,13 +35,9 @@
 #endif
 
 // Headers from the firmware (needed for function signatures only).
-#include "wifi_handler.h"
-#include "mqtt_handler.h"
-#include "registration.h"
-#include "storage.h"
+#include <HomeAnthillCore.h>
 #include "temp_sensor.h"
 #include "display.h"
-#include "feature_values.h"
 #include "controller.h"
 
 // =============================================================================
@@ -52,48 +48,41 @@
 // setup() and loop() compile and link but are never called from tests.
 // =============================================================================
 
-// --- Globals defined in wifi_handler.cpp and mqtt_handler.cpp ---------------
+// --- MQTT global supplied by the library (stubbed here) ---------------
 
-#if SSL == true
-WiFiClientSecure wifi_client;
-#else
-WiFiClient wifi_client;
-#endif
 PubSubClient mqtt_client;
 
-// --- wifi_handler -----------------------------------------------------------
+const char* const ha::ca_cert = "test-ca";
 
-void wifi_init_ca()              {}
-void wifi_start_connect()        {}
-void wifi_connect(char* mac)     { strncpy(mac, "aa:bb:cc:dd:ee:ff", 17); mac[17] = '\0'; }
-void wifi_reconnect(char* /*mac*/) {}
+// --- WiFi -----------------------------------------------------------
+
+
+void ha::wifi_start_connect(const ha::WifiConfig& /*config*/)        {}
+void ha::wifi_connect(const ha::WifiConfig& /*config*/, char* mac)     { strncpy(mac, "aa:bb:cc:dd:ee:ff", 17); mac[17] = '\0'; }
+void ha::wifi_reconnect(const ha::WifiConfig& /*config*/, char* /*mac*/) {}
 static int g_wifi_status = WL_CONNECTED;
 static int g_wifi_sync_time_calls = 0;
-int  wifi_get_status()           { return g_wifi_status; }
-void wifi_sync_time()            { g_wifi_sync_time_calls++; }
+int  ha::wifi_get_status()           { return g_wifi_status; }
+void ha::wifi_sync_time()            { g_wifi_sync_time_calls++; }
 
-void wifi_populate_mac(char* mac) {
+void ha::wifi_populate_mac(char* mac) {
   strncpy(mac, "aa:bb:cc:dd:ee:ff", 17);
   mac[17] = '\0';
 }
 
 // --- registration -----------------------------------------------------------
 
-int register_insecure_server(WiFiClient& /*c*/, const char* /*mac*/,
-                              const JsonDocument& /*f*/) { return 0; }
-int register_secure_server(WiFiClientSecure& /*c*/, const char* /*mac*/,
-                            const JsonDocument& /*f*/) { return 0; }
-int register_insecure_server_once(WiFiClient& /*c*/, const char* /*mac*/,
-                                  const JsonDocument& /*f*/) { return 0; }
-int register_secure_server_once(WiFiClientSecure& /*c*/, const char* /*mac*/,
-                                const JsonDocument& /*f*/) { return 0; }
+int ha::register_server(WiFiClient&, const char*, const JsonDocument&,
+                            const ha::RegistrationConfig&, bool) {
+  return 0;
+}
 
-// --- mqtt_handler -----------------------------------------------------------
 
-void mqtt_init(Client& /*c*/,
-               std::function<void(char*, uint8_t*, unsigned int)> /*cb*/) {}
-void mqtt_connect(const char* /*uuid*/) {}
-bool mqtt_try_connect_once(const char* /*uuid*/) {
+// --- Shared MQTT -----------------------------------------------------------
+
+void ha::mqtt_init(Client& /*c*/, std::function<void(char*, uint8_t*, unsigned int)> /*cb*/, const ha::MqttConfig& /*config*/) {}
+void ha::mqtt_connect(const char* /*uuid*/, const ha::MqttConfig& /*config*/) {}
+bool ha::mqtt_try_connect_once(const char* /*uuid*/, const ha::MqttConfig& /*config*/) {
   auto& state = MqttMockState::instance();
   state.connected_val = state.connect_result;
   return state.connect_result;
@@ -117,8 +106,8 @@ struct MqttNotifyCapture {
   static void reset() { instance().calls.clear(); }
 };
 
-void mqtt_notify_value(const char* device_uuid, const char* feature_uuid,
-                       const char* type, float value) {
+void ha::mqtt_notify_value(const char* device_uuid, const char* feature_uuid, const char* type, float value,
+                                const ha::MqttConfig& /*config*/, bool /*integer_value*/, const char* /*topic_name*/) {
   MqttNotifyCapture::instance().calls.push_back({
     device_uuid  ? device_uuid  : "",
     feature_uuid ? feature_uuid : "",
@@ -145,8 +134,8 @@ struct MqttAlarmCapture {
   static void reset() { instance().calls.clear(); }
 };
 
-void mqtt_notify_alarm(const char* device_uuid, const char* feature_uuid,
-                       const char* feature_name, const char* alarm_type, float value) {
+void ha::mqtt_notify_alarm(const char* device_uuid, const char* feature_uuid, const char* feature_name, const char* alarm_type, float value,
+                                const ha::MqttConfig& /*config*/, bool /*integer_value*/) {
   MqttAlarmCapture::instance().calls.push_back({
     device_uuid ? device_uuid : "",
     feature_uuid ? feature_uuid : "",
@@ -192,7 +181,7 @@ struct FeatureValuesCapture {
   static void reset() { instance().values.clear(); }
 };
 
-void feature_values_init(JsonArray /*features*/) {}
+void ha::feature_values_init(JsonArray /*features*/, bool /*controller_defaults*/) {}
 void feature_values_clear() {}
 size_t feature_values_count() {
   return FeatureValuesCapture::instance().values.size();

@@ -118,7 +118,7 @@ From the repository root, with Arduino CLI and ESP32 board support installed:
 ```bash
 cp secrets-template thermocouple-mcp9601/secrets.h
 # Edit secrets.h and the existing config.h for this device.
-arduino-cli compile --fqbn esp32:esp32:esp32s3 thermocouple-mcp9601
+arduino-cli compile --libraries ./libraries --fqbn esp32:esp32:esp32s3 thermocouple-mcp9601
 arduino-cli upload --fqbn esp32:esp32:esp32s3 --port /dev/ttyUSB0 thermocouple-mcp9601
 ```
 

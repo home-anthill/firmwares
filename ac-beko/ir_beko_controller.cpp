@@ -1,3 +1,4 @@
+#include <HomeAnthillCore.h>
 // include Arduino library to use Arduino function in cpp files
 #include <Arduino.h>
 // include json library (https://github.com/bblanchon/ArduinoJson)
@@ -19,7 +20,6 @@
 
 // private functions
 void ir_send_signal();
-bool hmac_sha256_hex(const char* key, const char* message, char* out);
 
 static const long COMMAND_MAX_SKEW_SECS = 300;
 static const size_t HMAC_SHA256_HEX_LEN = 64;
@@ -140,7 +140,7 @@ static bool verify_command_signature(JsonObject mqttFeature) {
            deviceUuidval, macval, modelval, featureUuidval, featureNameval,
            timestampval, nonceval, payload_json);
   char expected_signature[65];
-  if (!hmac_sha256_hex(API_TOKEN, signed_payload, expected_signature)) {
+  if (!ha::hmac_sha256_hex(API_TOKEN, signed_payload, expected_signature)) {
     Serial.println("ir_send_command - failed to verify command signature");
     return false;
   }

@@ -88,34 +88,34 @@ jobs:
 
           # build
           cd motion
-          arduino-cli compile --fqbn esp32:esp32:esp32s3 ./motion.ino
+          arduino-cli compile --libraries ../libraries --fqbn esp32:esp32:esp32s3 ./motion.ino
           cd ..
           cd airquality-airpressure
-          arduino-cli compile --fqbn esp32:esp32:esp32s3 ./airquality-airpressure.ino
+          arduino-cli compile --libraries ../libraries --fqbn esp32:esp32:esp32s3 ./airquality-airpressure.ino
           cd ..
           cd lux-temp-hum
-          arduino-cli compile --fqbn esp32:esp32:esp32s3 ./lux-temp-hum.ino
+          arduino-cli compile --libraries ../libraries --fqbn esp32:esp32:esp32s3 ./lux-temp-hum.ino
           cd ..
           cd pm
-          arduino-cli compile --fqbn esp32:esp32:esp32s3 ./pm.ino
+          arduino-cli compile --libraries ../libraries --fqbn esp32:esp32:esp32s3 ./pm.ino
           cd ..
           cd ph
-          arduino-cli compile --fqbn esp32:esp32:esp32s3 ./ph.ino
+          arduino-cli compile --libraries ../libraries --fqbn esp32:esp32:esp32s3 ./ph.ino
           cd ..
           cd water-level
-          arduino-cli compile --fqbn esp32:esp32:esp32s3 ./water-level.ino
+          arduino-cli compile --libraries ../libraries --fqbn esp32:esp32:esp32s3 ./water-level.ino
           cd ..
           cd ac-beko
-          arduino-cli compile --fqbn esp32:esp32:esp32s3 ./ac-beko.ino
+          arduino-cli compile --libraries ../libraries --fqbn esp32:esp32:esp32s3 ./ac-beko.ino
           cd ..
           cd ac-lg
-          arduino-cli compile --fqbn esp32:esp32:esp32s3 ./ac-lg.ino
+          arduino-cli compile --libraries ../libraries --fqbn esp32:esp32:esp32s3 ./ac-lg.ino
           cd ..
           cd thermocouple-mcp9601
-          arduino-cli compile --fqbn esp32:esp32:esp32s3 ./thermocouple-mcp9601.ino
+          arduino-cli compile --libraries ../libraries --fqbn esp32:esp32:esp32s3 ./thermocouple-mcp9601.ino
           cd ..
           cd thermostat
-          arduino-cli compile --fqbn esp32:esp32:esp32s3 ./thermostat.ino
+          arduino-cli compile --libraries ../libraries --fqbn esp32:esp32:esp32s3 ./thermostat.ino
           cd ..
   unit-tests:
     name: Unit tests (host)
@@ -135,7 +135,7 @@ jobs:
 
       - name: Build and run unit tests
         run: |
-          for fw in motion airquality-airpressure lux-temp-hum pm ph water-level ac-beko ac-lg thermostat thermocouple-mcp9601; do
+          for fw in libraries/HomeAnthillCore motion airquality-airpressure lux-temp-hum pm ph water-level ac-beko ac-lg thermostat thermocouple-mcp9601; do
             echo "::group::$fw"
             cmake -S $fw/tests -B $fw/tests/build
             cmake --build $fw/tests/build --parallel

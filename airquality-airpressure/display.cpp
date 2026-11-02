@@ -26,7 +26,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "feature_values.h"
+#include <HomeAnthillCore.h>
 
 // Configure I2C for Display
 // OLED GND --> GND

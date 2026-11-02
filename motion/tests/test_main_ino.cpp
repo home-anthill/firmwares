@@ -18,12 +18,8 @@
 #include "secrets.h"
 
 // Headers from the firmware (needed for function signatures only).
-#include "wifi_handler.h"
-#include "mqtt_handler.h"
-#include "registration.h"
-#include "storage.h"
+#include <HomeAnthillCore.h>
 #include "motion_sensor.h"
-#include "feature_values.h"
 
 // =============================================================================
 // Stubs — provide every external symbol that <main-project-arduino-file>.ino references.
@@ -34,38 +30,35 @@
 // orchestrate full I/O sequences that are not meaningfully unit-testable.
 // =============================================================================
 
-// --- Globals defined in wifi_handler.cpp and mqtt_handler.cpp ---------------
+// --- MQTT global supplied by the library (stubbed here) ---------------
 
-#if SSL == true
-WiFiClientSecure wifi_client;
-#else
-WiFiClient wifi_client;
-#endif
 PubSubClient     mqtt_client;
 
-// --- wifi_handler -----------------------------------------------------------
+const char* const ha::ca_cert = "test-ca";
 
-void wifi_init_ca()             {}
-void wifi_reconnect(char* /*mac*/) {}
-int  wifi_get_status()          { return WL_CONNECTED; }
+// --- WiFi -----------------------------------------------------------
 
-void wifi_connect(char* mac) {
+
+void ha::wifi_reconnect(const ha::WifiConfig& /*config*/, char* /*mac*/) {}
+int  ha::wifi_get_status()          { return WL_CONNECTED; }
+
+void ha::wifi_connect(const ha::WifiConfig& /*config*/, char* mac) {
   strncpy(mac, "aa:bb:cc:dd:ee:ff", 17);
   mac[17] = '\0';
 }
 
 // --- registration -----------------------------------------------------------
 
-int register_secure_server(WiFiClientSecure& /*c*/, const char* /*mac*/,
-                            const JsonDocument& /*f*/) { return 0; }
-int register_insecure_server(WiFiClient& /*c*/, const char* /*mac*/,
-                             const JsonDocument& /*f*/) { return 0; }
+int ha::register_server(WiFiClient&, const char*, const JsonDocument&,
+                            const ha::RegistrationConfig&, bool) {
+  return 0;
+}
 
-// --- mqtt_handler -----------------------------------------------------------
 
-void mqtt_init(Client& /*c*/,
-               std::function<void(char*, uint8_t*, unsigned int)> /*cb*/) {}
-void mqtt_connect(const char* /*uuid*/) {}
+// --- Shared MQTT -----------------------------------------------------------
+
+void ha::mqtt_init(Client& /*c*/, std::function<void(char*, uint8_t*, unsigned int)> /*cb*/, const ha::MqttConfig& /*config*/) {}
+void ha::mqtt_connect(const char* /*uuid*/, const ha::MqttConfig& /*config*/) {}
 
 // Capture every mqtt_notify_value() call so tests can inspect it.
 struct NotifyCall {
@@ -73,6 +66,8 @@ struct NotifyCall {
   std::string feature_uuid;
   std::string type;
   float       value;
+  bool integer_value = false;
+  std::string topic_name;
 };
 
 struct MqttNotifyCapture {
@@ -85,13 +80,15 @@ struct MqttNotifyCapture {
   static void reset() { instance().calls.clear(); }
 };
 
-void mqtt_notify_value(const char* device_uuid, const char* feature_uuid,
-                       const char* type, float value) {
+void ha::mqtt_notify_value(const char* device_uuid, const char* feature_uuid, const char* type, float value,
+                                const ha::MqttConfig& /*config*/, bool integer_value, const char* topic_name) {
   MqttNotifyCapture::instance().calls.push_back({
     device_uuid  ? device_uuid  : "",
     feature_uuid ? feature_uuid : "",
     type         ? type         : "",
-    value
+    value,
+    integer_value,
+    topic_name ? topic_name : ""
   });
 }
 
@@ -113,8 +110,8 @@ struct MqttAlarmCapture {
   static void reset() { instance().calls.clear(); }
 };
 
-void mqtt_notify_alarm(const char* device_uuid, const char* feature_uuid,
-                       const char* feature_name, const char* alarm_type, float value) {
+void ha::mqtt_notify_alarm(const char* device_uuid, const char* feature_uuid, const char* feature_name, const char* alarm_type, float value,
+                                const ha::MqttConfig& /*config*/, bool /*integer_value*/) {
   MqttAlarmCapture::instance().calls.push_back({
     device_uuid ? device_uuid : "",
     feature_uuid ? feature_uuid : "",
@@ -159,7 +156,7 @@ struct FeatureValueCapture {
   static void reset() { instance() = FeatureValueCapture{}; }
 };
 
-void feature_values_init(JsonArray /*features*/) {
+void ha::feature_values_init(JsonArray /*features*/, bool /*controller_defaults*/) {
   FeatureValueCapture::instance().init_calls++;
 }
 
@@ -347,6 +344,7 @@ TEST_F(MainInoTest, ReadMotionPublishesWhenValueChangedAndFeatureFound) {
   EXPECT_EQ(FeatureValueCapture::instance().set_calls[0].name, "motion");
   EXPECT_FLOAT_EQ(FeatureValueCapture::instance().set_calls[0].value, 1.0f);
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].type, "motion");
+  EXPECT_TRUE(MqttNotifyCapture::instance().calls[0].integer_value);
   EXPECT_FLOAT_EQ(MqttNotifyCapture::instance().calls[0].value, 1.0f);
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].device_uuid, "device-uuid-test-0000-000000000000");
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].feature_uuid, "mo-uuid-0000-0000-000000000002");
@@ -415,6 +413,7 @@ TEST_F(MainInoTest, SendOnlineStatusPublishesAndRecordsFeatureValue) {
 
   ASSERT_EQ(MqttNotifyCapture::instance().calls.size(), 1u);
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].type, "online");
+  EXPECT_FALSE(MqttNotifyCapture::instance().calls[0].integer_value);
   EXPECT_FLOAT_EQ(MqttNotifyCapture::instance().calls[0].value, 1.0f);
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].device_uuid, "device-uuid-test-0000-000000000000");
   EXPECT_EQ(MqttNotifyCapture::instance().calls[0].feature_uuid, "on-uuid-0000-0000-000000000003");

@@ -2,8 +2,8 @@
 #include <cstring>
 
 #include <ArduinoJson.h>
-#include "Preferences.h"  // mock — must appear before storage.h pulls it in via Arduino.h path
-#include "storage.h"
+#include "Preferences.h"  // Preferences mock for the shared storage implementation
+#include <HomeAnthillCore.h>
 
 // ---------------------------------------------------------------------------
 // Each test starts with a clean NVS store.

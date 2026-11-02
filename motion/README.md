@@ -69,7 +69,7 @@ Prepare credentials if missing:
 ```sh
 cp secrets-template motion/secrets.h
 # Edit motion/secrets.h: WiFi, MODEL, admission and MQTT settings.
-arduino-cli compile --fqbn esp32:esp32:esp32s3 ./motion/motion.ino
+arduino-cli compile --libraries ./libraries --fqbn esp32:esp32:esp32s3 ./motion/motion.ino
 ```
 
 If changing TLS, keep `SSL`, `SERVER_PORT`, and `MQTT_PORT` consistent.

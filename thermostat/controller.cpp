@@ -8,9 +8,8 @@
 #include "secrets.h"
 
 // include local files
-#include "storage.h"
+#include <HomeAnthillCore.h>
 
-bool hmac_sha256_hex(const char* key, const char* message, char* out);
 
 static const long COMMAND_MAX_SKEW_SECS = 300;
 static const size_t HMAC_SHA256_HEX_LEN = 64;
@@ -137,7 +136,7 @@ static bool verify_command_signature(JsonObject featureValue) {
            f_device_uuid, f_mac, f_model, f_feature_uuid, f_feature_name,
            f_timestamp, f_nonce, payload_json);
   char expected_signature[65];
-  if (!hmac_sha256_hex(API_TOKEN, signed_payload, expected_signature)) {
+  if (!ha::hmac_sha256_hex(API_TOKEN, signed_payload, expected_signature)) {
     Serial.println("set_configuration - failed to verify command signature");
     return false;
   }

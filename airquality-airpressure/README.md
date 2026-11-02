@@ -82,7 +82,7 @@ Prepare credentials if missing:
 ```sh
 cp secrets-template airquality-airpressure/secrets.h
 # Edit airquality-airpressure/secrets.h: WiFi, MODEL, admission and MQTT settings.
-arduino-cli compile --fqbn esp32:esp32:esp32s3 ./airquality-airpressure/airquality-airpressure.ino
+arduino-cli compile --libraries ./libraries --fqbn esp32:esp32:esp32s3 ./airquality-airpressure/airquality-airpressure.ino
 ```
 
 If changing TLS, keep `SSL`, `SERVER_PORT`, and `MQTT_PORT` consistent.

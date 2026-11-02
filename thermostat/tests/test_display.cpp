@@ -11,14 +11,14 @@
 #include "Adafruit_SSD1306.h"
 
 #include "display.h"
-#include "feature_values.h"
+#include <HomeAnthillCore.h>
 
 static const uint8_t kDisplayButtonPin = DISPLAY_BUTTON_PIN;
 
 static FeatureValue g_feature_values[3];
 static size_t g_feature_values_count = 0;
 
-void feature_values_init(JsonArray /*features*/) {}
+void ha::feature_values_init(JsonArray /*features*/, bool /*controller_defaults*/) {}
 void feature_values_clear() {}
 
 size_t feature_values_count() {

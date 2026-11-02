@@ -57,7 +57,7 @@ cp secrets-template lux-temp-hum/secrets.h
 ### Common Commands
 ```bash
 # Build a single firmware (e.g., lux-temp-hum for esp32)
-cd lux-temp-hum && arduino-cli compile --fqbn esp32:esp32:esp32s3 ./lux-temp-hum.ino
+cd lux-temp-hum && arduino-cli compile --libraries ../libraries --fqbn esp32:esp32:esp32s3 ./lux-temp-hum.ino
 
 # Build all firmwares and run all host tests
 ./build-all.sh
@@ -82,6 +82,35 @@ For a repo-wide local check, use `./build-all.sh`. It prepares missing `secrets.
 
 Each Arduino firmware includes its own project-specific `config.h` and needs a gitignored `secrets.h`. There are no config templates to copy. Copy `secrets-template` only when credentials are missing, and edit `config.h` using the local firmware README. Do not overwrite existing headers or print real secrets.
 
+### Arduino IDE: link the local HomeAnthillCore library
+
+Use a symbolic link so Arduino IDE builds the library directly from this
+checkout, without copying or installing a ZIP snapshot. The `ha::` namespace
+belongs to the `HomeAnthillCore` library.
+
+Check **Settings/Preferences → Sketchbook location** in Arduino IDE. Keep the
+existing sketchbook so its other installed libraries remain available. For the
+default macOS sketchbook, run these commands once **from the `firmwares`
+repository root**:
+
+```sh
+mkdir -p "$HOME/Documents/Arduino/libraries"
+ln -s "$PWD/libraries/HomeAnthillCore" \
+  "$HOME/Documents/Arduino/libraries/HomeAnthillCore"
+```
+
+Adjust the destination if the sketchbook is elsewhere. If the destination
+already exists, inspect it before replacing it; do not overwrite an installed
+copy or an existing link blindly. The absolute source path keeps the link valid
+when building from another directory. If the checkout moves, recreate the link
+to its new location.
+
+Restart Arduino IDE, open the desired firmware's `.ino`, select **ESP32S3 Dev
+Module**, and use **Verify** or **Upload** as usual. Install the firmware's
+external dependencies separately through Library Manager. Every rebuild uses
+the current library source in the checkout; no copying or reinstallation is
+needed after edits. Keep the link as local machine setup, outside Git.
+
 ## Local Development
 
 ### Environment Setup
@@ -102,7 +131,7 @@ The `SSL` define controls whether connections use TLS — when toggling it, also
 ### Debugging
 - **Serial output**: Most firmwares print debug logs to Serial at 115200 baud. Use `screen /dev/ttyUSB0 115200` or Arduino IDE's Serial Monitor to view.
 - **MQTT debugging**: Verify device registration at `/admission/register` endpoint. Check MQTT topics `sensors/<uuid>/<type>` for published values.
-- **WiFi issues**: Enable WiFi debug logging (uncomment `Serial.println()` statements in `wifi_handler.cpp`).
+- **WiFi issues**: Inspect WiFi logging in `libraries/HomeAnthillCore/src/wifi.cpp`.
 - **Preferences storage**: Use `preferences.h` inspection via Serial to debug persistent storage issues.
 
 ### Testing Approach
@@ -207,18 +236,26 @@ Thermostat settings in `config.h`:
   | `CONN_COOLDOWN` | Do nothing, then `ESP.restart()` | 43 200 s (12 h) |
 
   Exhausting any phase's budget transitions to `CONN_COOLDOWN`, capping reboots to ~2/day.
-- Thermostat-specific `wifi_handler.cpp` adds `wifi_start_connect()` (non-blocking `WiFi.begin()`) and `wifi_populate_mac()`; `mqtt_handler.cpp` adds `mqtt_try_connect_once()` (single attempt, no retry loop); `registration.cpp` adds `register_secure_server_once()` / `register_insecure_server_once()` (single HTTP attempt, no delay, no restart) — these call a private `register_once_impl()` helper; the blocking `register_secure_server()` / `register_insecure_server()` variants remain for other firmwares
+- The thermostat calls `ha::wifi_start_connect()`, `ha::wifi_populate_mac()`, `ha::mqtt_try_connect_once()`, and `ha::register_server(..., registration_config, false)` directly. The last argument disables registration retries so the local connectivity state machine owns its retry budget.
 
-### Repeated infrastructure modules (inspect local differences)
+### Shared infrastructure
 
-Modules are copied per project, not linked from one shared source directory. Thermostat connectivity and pH display/calibration deliberately differ; do not overwrite them with bulk copies.
+Common infrastructure lives in `libraries/HomeAnthillCore/src/`. Include
+`<HomeAnthillCore.h>` directly; do not add firmware-local forwarding headers or
+network wrapper functions. Include the optional `<HomeAnthillConfig.h>` after
+local `config.h` and `secrets.h` to declare configuration objects from their
+macros; do not duplicate this bridge per firmware. The sketch owns its plain/TLS
+`wifi_client`. Library implementations and `<HomeAnthillCore.h>` must remain
+independent of sketch settings and must not include the optional configuration
+header. Device control, displays, and calibration remain local.
 
-- **`wifi_handler.cpp/h`** — WiFi connection/reconnection. Embeds a CA certificate for TLS. Exposes a global `wifi_client` (either `WiFiClientSecure` or `WiFiClient` based on the `SSL` define).
-- **`registration.cpp/h`** — HTTP POST to `/admission/register`. Handles first-boot (HTTP 200) and already-registered (HTTP 409). Stores device UUID and features in Preferences on success.
-- **`mqtt_handler.cpp/h`** — MQTT connection and publishing via `PubSubClient`. Publishes to `sensors/<device_uuid>/<type>`, subscribes to `devices/<uuid>/values`. Socket timeout is set to 15 s (`setSocketTimeout`) to bound TLS hangs. On publish failure, `mqtt_client.disconnect()` is called explicitly so that `mqtt_client.connected()` returns `false` on the next `loop()` iteration and the reconnect path is entered (a stale TCP socket would otherwise keep `connected()` returning `true` indefinitely).
-- **`storage.cpp/h`** — Persistent key-value storage using ESP32 `Preferences` library. Stores device UUID (`"uuid"` key) and features array (`"features"` key) under namespace `"device"`.
-- **`feature_values.cpp/h`** — In-memory cache of current feature values keyed by registered feature name. Used by OLED display code and command/sensor updates.
-- **`display.cpp/h`** — Optional SSD1306 128x32 OLED output behind the `OLED_DISPLAY` define. Tests can force it on with `HOME_ANTHILL_TEST_OLED_DISPLAY`.
+- **`anthill/wifi.h`** — WiFi connection/reconnection, CA certificate and time synchronization. The sketch selects plain or TLS transport using `SSL` and sets `ha::ca_cert` on its TLS client.
+- **`anthill/registration.h`** — HTTP POST to `/admission/register`, identity validation and storage. `ha::register_server` takes `registration_config` and an explicit network-retry flag.
+- **`anthill/mqtt.h`** — MQTT connections, subscriptions, signed values and alarms via `PubSubClient`. The sketch passes `mqtt_config`, optional integer formatting and topic aliases. Socket timeout remains 15 s; publish failures disconnect so the reconnect path runs. Each sketch also disconnects on failed `mqtt_client.loop()`.
+- **`anthill/signing.h`** — ESP32 HMAC-SHA256 and random nonce generation; controllers call the same HMAC function for command verification.
+- **`anthill/storage.h`** — Preferences persistence under namespace `device`, including UUID, features, and complete controller-state arrays.
+- **`anthill/feature_values.h`** — In-memory feature cache. Call `ha::feature_values_init(features, controller_defaults)` with `true` for the IR controllers and `false` for sensors/thermostat; the other cache accessors remain global.
+- **`display.cpp/h`** — Local optional SSD1306 output behind `OLED_DISPLAY`, forced on in tests with `HOME_ANTHILL_TEST_OLED_DISPLAY`.
 
 ### Key flow
 
@@ -258,7 +295,7 @@ The server responds:
 
 ### SSL conditional compilation
 
-The `SSL` define in `secrets.h` controls whether connections use TLS. It's checked via `#if SSL==true` preprocessor directives throughout wifi, registration, and MQTT code. When changing SSL, also update `SERVER_PORT` and `MQTT_PORT`. The `MQTT_AUTH` define independently controls MQTT username/password authentication.
+The `SSL` define in `secrets.h` controls whether connections use TLS. The sketch checks `#if SSL==true` to select its transport, and passes this setting in `registration_config`. When changing SSL, also update `SERVER_PORT` and `MQTT_PORT`. The `MQTT_AUTH` define independently controls MQTT username/password authentication.
 
 ## CI
 
@@ -304,8 +341,7 @@ GitHub Actions workflow (`.github/workflows/run-build.yml`) builds all active fi
 To add a new device:
 
 1. Create a new directory with the device name (snake_case).
-2. Copy shared modules from any existing firmware:
-   - `wifi_handler.cpp/h`, `registration.cpp/h`, `mqtt_handler.cpp/h`, `storage.cpp/h`
+2. Include `<HomeAnthillCore.h>` directly and `<HomeAnthillConfig.h>` after local `config.h` and `secrets.h` for configuration objects. Define the selected plain/TLS client in the sketch, following the closest firmware. Do not duplicate the configuration bridge, copy library implementations, or add forwarding wrappers.
 3. Create device-specific modules (e.g., `sensor_name.h`).
 4. Create the main `<device_name>.ino` file with:
    - `setup()`: initialize WiFi → register → MQTT → sensor-specific init
@@ -315,7 +351,7 @@ To add a new device:
 5. Add the device to `.github/workflows/run-build.yml` build matrix.
 6. Add the device to the `FIRMWARES` array in `build-all.sh`.
 7. Create `tests/` with a `CMakeLists.txt` and mocks — copy the closest existing firmware's `tests/` directory as a starting point, then add device-specific test files.
-8. Test compilation: `arduino-cli compile --fqbn esp32:esp32:esp32s3 ./<device_name>.ino`
+8. Test compilation: `arduino-cli compile --libraries ../libraries --fqbn esp32:esp32:esp32s3 ./<device_name>.ino`
 9. Add a project-specific `config.h` for GPIO assignments and firmware options, and write a firmware-specific `README.md` following the documentation rules below. Do not add a config template.
 10. Run the local aggregate check: `./build-all.sh --test-only` and, when Arduino CLI is installed, `./build-all.sh --build-only`.
 

@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.14)
 project(main_tests CXX)
 
+set(HOME_ANTHILL_CORE_SRC "${CMAKE_CURRENT_LIST_DIR}/../../libraries/HomeAnthillCore/src")
+include_directories("${HOME_ANTHILL_CORE_SRC}")
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -29,7 +32,7 @@ FetchContent_MakeAvailable(arduinojson)
 # ---------------------------------------------------------------------------
 add_executable(test_storage
   test_storage.cpp
-  ../storage.cpp
+  ${HOME_ANTHILL_CORE_SRC}/storage.cpp
 )
 
 # Mock headers MUST come before any system path so that #include <Arduino.h>
@@ -37,7 +40,7 @@ add_executable(test_storage
 # the host anyway).
 target_include_directories(test_storage PRIVATE
   mocks   # provides Arduino.h, Preferences.h stubs
-  ..      # provides storage.h
+  ..      # local device headers and configuration
 )
 
 target_link_libraries(test_storage
@@ -50,13 +53,14 @@ target_link_libraries(test_storage
 # ---------------------------------------------------------------------------
 add_executable(test_registration
   test_registration.cpp
-  ../registration.cpp
-  ../storage.cpp       # registration.cpp calls storage_set_uuid / storage_set_features
+
+  ${HOME_ANTHILL_CORE_SRC}/registration.cpp
+  ${HOME_ANTHILL_CORE_SRC}/storage.cpp       # shared registration calls storage_set_uuid / storage_set_features
 )
 
 target_include_directories(test_registration PRIVATE
   mocks   # Arduino.h, Preferences.h, WiFi.h, WiFiClientSecure.h, HTTPClient.h stubs
-  ..      # registration.h, storage.h, secrets.h
+  ..      # local device headers and configuration
 )
 
 target_link_libraries(test_registration
@@ -69,14 +73,16 @@ target_link_libraries(test_registration
 # ---------------------------------------------------------------------------
 add_executable(test_mqtt_handler
   test_mqtt_handler.cpp
-  ../mqtt_handler.cpp
+
+  ${HOME_ANTHILL_CORE_SRC}/mqtt.cpp
+  ${HOME_ANTHILL_CORE_SRC}/signing.cpp
 )
 
 target_compile_definitions(test_mqtt_handler PRIVATE HOME_ANTHILL_HOST_TEST)
 
 target_include_directories(test_mqtt_handler PRIVATE
   mocks   # Arduino.h, WiFi.h, PubSubClient.h stubs
-  ..      # mqtt_handler.h, secrets.h
+  ..      # local device headers and configuration
 )
 
 target_link_libraries(test_mqtt_handler
@@ -96,7 +102,7 @@ target_compile_definitions(test_display PRIVATE HOME_ANTHILL_TEST_OLED_DISPLAY)
 
 target_include_directories(test_display PRIVATE
   mocks   # Arduino.h, Wire.h, Adafruit_GFX.h, Adafruit_SSD1306.h stubs
-  ..      # display.h
+  ..      # local device headers and configuration
 )
 
 target_link_libraries(test_display
@@ -114,7 +120,7 @@ add_executable(test_temp_sensor
 
 target_include_directories(test_temp_sensor PRIVATE
   mocks   # Arduino.h, Wire.h, Adafruit_I2CDevice.h, Adafruit_MCP9600.h stubs
-  ..      # temp_sensor.h
+  ..      # local device headers and configuration
 )
 
 target_link_libraries(test_temp_sensor
@@ -144,13 +150,15 @@ endforeach()
 add_executable(test_controller
   test_controller.cpp
   ../controller.cpp
-  ../storage.cpp       # get_setpoint/get_tolerance call storage_get_feature_values
-  ../mqtt_handler.cpp
+  ${HOME_ANTHILL_CORE_SRC}/storage.cpp       # get_setpoint/get_tolerance call storage_get_feature_values
+
+  ${HOME_ANTHILL_CORE_SRC}/mqtt.cpp
+  ${HOME_ANTHILL_CORE_SRC}/signing.cpp
 )
 
 target_include_directories(test_controller PRIVATE
   mocks   # Arduino.h, Preferences.h, PubSubClient.h, avr/pgmspace.h stubs
-  ..      # controller.h, storage.h, secrets.h
+  ..      # local device headers and configuration
 )
 
 target_compile_definitions(test_controller PRIVATE ARDUINOJSON_ENABLE_PROGMEM=1 HOME_ANTHILL_HOST_TEST)
@@ -164,7 +172,7 @@ target_link_libraries(test_controller
 # Test executable: main_ino
 #
 # thermostat.ino is compiled as C++ via main_ino_wrapper.cpp.
-# All external dependencies (wifi_handler, registration, mqtt_handler,
+# All external dependencies (HomeAnthillCore networking and registration,
 # storage, temp_sensor, display, controller) are replaced by stubs defined
 # inside test_main_ino.cpp itself, so no additional .cpp files are needed.
 # setup() and loop() compile and link but are never called by the tests.
@@ -177,7 +185,7 @@ function(configure_main_ino_test target operating_mode)
 
   target_include_directories(${target} PRIVATE
     mocks   # Arduino.h, WiFi.h, WiFiClientSecure.h, PubSubClient.h, TimeAlarms.h stubs
-    ..      # wifi_handler.h, mqtt_handler.h, registration.h, storage.h,
+    ..      # local device headers and configuration
             # temp_sensor.h, display.h, controller.h, secrets.h
   )
 

@@ -36,6 +36,29 @@ sensors
 
 All device firmwares support **ESP32-S3 only** (`esp32:esp32:esp32s3`). Local builds and Arduino CI use this target. The simulator also targets ESP32-S3, using ESP-IDF.
 
+
+## Shared Arduino library
+
+All Arduino firmwares use [HomeAnthillCore](libraries/HomeAnthillCore/README.md)
+for WiFi, registration, signed MQTT telemetry, Preferences storage, and feature
+value caching. The source lives in this repository; rebuilding a firmware uses
+the current library code. Sensor drivers, control logic, displays, credentials,
+and device-specific configuration remain in each firmware folder.
+
+From the repository root:
+
+```sh
+# Build a single firmware (e.g., lux-temp-hum for esp32)
+arduino-cli compile --libraries ./libraries --fqbn esp32:esp32:esp32s3 ./lux-temp-hum
+./build-all.sh --test-only
+./build-all.sh --build-only
+```
+
+`build-all.sh` and CI already supply the local library path. Arduino IDE users
+should link `libraries/HomeAnthillCore` into their existing sketchbook's
+`libraries` folder once; see the [library setup guide](libraries/HomeAnthillCore/README.md#arduino-ide).
+
+
 ## GPIO configuration
 
 Each Arduino firmware includes its own project-specific `config.h` for GPIO
@@ -71,13 +94,6 @@ Versions:
 - 02/09/2025 - 2.0.0
 - 19/05/2024 - 1.0.0
 - 11/01/2023 - 1.0.0-beta.1
-
-
-## :sparkling_heart: A big thank you to :sparkling_heart:
-
-##### the authors of the main icon of this project:
-
-- <a href="https://www.freepik.com/free-vector/underground-ant-nest-with-red-ants_18582279.htm">Image by brgfx</a> from <a href="https://www.freepik.com/" title="Freepik">Freepik</a>
 
 
 # :copyright: License :copyright:

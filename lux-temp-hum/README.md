@@ -73,7 +73,7 @@ Prepare credentials if missing:
 ```sh
 cp secrets-template lux-temp-hum/secrets.h
 # Edit lux-temp-hum/secrets.h: WiFi, MODEL, admission and MQTT settings.
-arduino-cli compile --fqbn esp32:esp32:esp32s3 ./lux-temp-hum/lux-temp-hum.ino
+arduino-cli compile --libraries ./libraries --fqbn esp32:esp32:esp32s3 ./lux-temp-hum/lux-temp-hum.ino
 ```
 
 If changing TLS, keep `SSL`, `SERVER_PORT`, and `MQTT_PORT` consistent.

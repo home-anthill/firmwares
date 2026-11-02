@@ -85,7 +85,7 @@ Prepare credentials if missing:
 ```sh
 cp secrets-template pm/secrets.h
 # Edit pm/secrets.h: WiFi, MODEL, admission and MQTT settings.
-arduino-cli compile --fqbn esp32:esp32:esp32s3 ./pm/pm.ino
+arduino-cli compile --libraries ./libraries --fqbn esp32:esp32:esp32s3 ./pm/pm.ino
 ```
 
 If changing TLS, keep `SSL`, `SERVER_PORT`, and `MQTT_PORT` consistent.

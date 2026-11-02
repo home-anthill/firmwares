@@ -10,7 +10,7 @@
 
 #include "config.h"
 #include "secrets.h"   // MODEL, API_TOKEN, TEMP_MIN/MAX come from controller.cpp defines
-#include "storage.h"
+#include <HomeAnthillCore.h>
 #include "controller.h"
 
 void reset_command_nonce_cache_for_test();

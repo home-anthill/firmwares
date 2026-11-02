@@ -70,7 +70,7 @@ Prepare credentials if missing:
 ```sh
 cp secrets-template water-level/secrets.h
 # Edit water-level/secrets.h: WiFi, MODEL, admission and MQTT settings.
-arduino-cli compile --fqbn esp32:esp32:esp32s3 ./water-level/water-level.ino
+arduino-cli compile --libraries ./libraries --fqbn esp32:esp32:esp32s3 ./water-level/water-level.ino
 ```
 
 If changing TLS, keep `SSL`, `SERVER_PORT`, and `MQTT_PORT` consistent.

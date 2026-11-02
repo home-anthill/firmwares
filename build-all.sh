@@ -103,7 +103,7 @@ if [[ "$build_firmwares" == true ]]; then
       section "Building $firmware for $board"
       (
         cd "$ROOT_DIR/$firmware"
-        arduino-cli compile --fqbn "esp32:esp32:$board" "./$firmware.ino"
+        arduino-cli compile --libraries "$ROOT_DIR/libraries" --fqbn "esp32:esp32:$board" "./$firmware.ino"
       )
     done
   done
@@ -113,7 +113,7 @@ if [[ "$run_tests" == true ]]; then
   require_command cmake
   require_command ctest
 
-  for firmware in "${FIRMWARES[@]}"; do
+  for firmware in libraries/HomeAnthillCore "${FIRMWARES[@]}"; do
     section "Running tests for $firmware"
 
     test_source_dir="$ROOT_DIR/$firmware/tests"

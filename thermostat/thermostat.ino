@@ -20,13 +20,16 @@
 
 // include all local files
 #include "controller.h"
-#include "mqtt_handler.h"
-#include "registration.h"
-#include "storage.h"
+#include <HomeAnthillCore.h>
+#include <HomeAnthillConfig.h>
 #include "temp_sensor.h"
-#include "wifi_handler.h"
 #include "display.h"
-#include "feature_values.h"
+
+#if SSL==true
+WiFiClientSecure wifi_client;
+#else
+WiFiClient wifi_client;
+#endif
 
 char mac_address[18];
 
@@ -218,10 +221,10 @@ void feature_values_load_saved() {
 
 void feature_values_init_saved_features() {
   if (saved_features.size() > 0) {
-    feature_values_init(saved_features);
+    ha::feature_values_init(saved_features, false);
   } else {
     JsonDocument default_features = buildFeatures();
-    feature_values_init(default_features.as<JsonArray>());
+    ha::feature_values_init(default_features.as<JsonArray>(), false);
   }
 
   feature_values_load_saved();
@@ -329,7 +332,7 @@ void publish_sensor_value(const char* feature_name, float value) {
   }
   char feature_uuid[37];
   if (get_feature_uuid_by_name(feature_uuid, sizeof(feature_uuid), feature_name)) {
-    mqtt_notify_value(saved_device_uuid, feature_uuid, feature_name, value);
+    ha::mqtt_notify_value(saved_device_uuid, feature_uuid, feature_name, value, mqtt_config);
   } else {
     Serial.printf("publish_sensor_value - feature uuid not found for %s\n", feature_name);
   }
@@ -343,7 +346,7 @@ void publish_alarm(const char* feature_name, const char* alarm_type, float value
 
   char feature_uuid[37];
   if (get_feature_uuid_by_name(feature_uuid, sizeof(feature_uuid), feature_name)) {
-    mqtt_notify_alarm(saved_device_uuid, feature_uuid, feature_name, alarm_type, value);
+    ha::mqtt_notify_alarm(saved_device_uuid, feature_uuid, feature_name, alarm_type, value, mqtt_config);
   } else {
     Serial.printf("publish_alarm - feature uuid not found for %s\n", feature_name);
   }
@@ -710,20 +713,20 @@ void setup() {
 // 6. prepare wifi_client (CA cert for TLS)
 #if SSL == true
   Serial.println("setup - running with SSL enabled");
-  wifi_init_ca();
+  wifi_client.setCACert(ha::ca_cert);
 #else
   Serial.println("setup - running WITHOUT SSL");
 #endif
 
   // 7. init MQTT client
   Serial.println("setup - init mqtt...");
-  mqtt_init(wifi_client, mqtt_callback);
+  ha::mqtt_init(wifi_client, mqtt_callback, mqtt_config);
 
   // 8. kick off WiFi connection — non-blocking; loop() drives the state machine
   Serial.println("setup - starting WiFi (non-blocking, state machine continues in loop)...");
   display_set_connectivity_status(false, false);
   update_display();
-  wifi_start_connect();
+  ha::wifi_start_connect(wifi_config);
   // conn_state is already CONN_WIFI_WAITING (default)
 }
 
@@ -737,11 +740,11 @@ void handle_connectivity() {
   switch (conn_state) {
 
   case CONN_WIFI_WAITING:
-    if (wifi_get_status() == WL_CONNECTED) {
+    if (ha::wifi_get_status() == WL_CONNECTED) {
       display_set_connectivity_status(true, false);
       display_show_message("WiFi status", "Online");
-      wifi_populate_mac(mac_address);
-      wifi_sync_time();
+      ha::wifi_populate_mac(mac_address);
+      ha::wifi_sync_time();
       conn_attempts = 0;
       conn_next_attempt_ms = 0;
 
@@ -776,12 +779,12 @@ void handle_connectivity() {
     break;
 
   case CONN_REGISTERING:
-    if (wifi_get_status() != WL_CONNECTED) {
+    if (ha::wifi_get_status() != WL_CONNECTED) {
       display_set_connectivity_status(false, false);
       update_display();
       Serial.println("handle_connectivity - WiFi lost during registration, restarting WiFi");
       conn_attempts = 0;
-      wifi_start_connect();
+      ha::wifi_start_connect(wifi_config);
       conn_state = CONN_WIFI_WAITING;
       break;
     }
@@ -792,13 +795,8 @@ void handle_connectivity() {
       Serial.printf("handle_connectivity - registration attempt %d/%d\n",
                     conn_attempts + 1, CONN_MAX_REG_ATTEMPTS);
       JsonDocument features = buildFeatures();
-      int result = -1;
-#if SSL == true
-      result = register_secure_server_once(wifi_client, mac_address, features);
-#else
-      result =
-          register_insecure_server_once(wifi_client, mac_address, features);
-#endif
+
+      int result = ha::register_server(wifi_client, mac_address, features, registration_config, false);
       Serial.printf("handle_connectivity - registration result = %d\n", result);
 
       if (result == 0) {
@@ -837,13 +835,13 @@ void handle_connectivity() {
     break;
 
   case CONN_MQTT_TRYING:
-    if (wifi_get_status() != WL_CONNECTED) {
+    if (ha::wifi_get_status() != WL_CONNECTED) {
       display_set_connectivity_status(false, false);
       update_display();
       Serial.println("handle_connectivity - WiFi lost during MQTT connect, "
                      "restarting WiFi");
       conn_attempts = 0;
-      wifi_start_connect();
+      ha::wifi_start_connect(wifi_config);
       conn_state = CONN_WIFI_WAITING;
       break;
     }
@@ -853,7 +851,7 @@ void handle_connectivity() {
     Serial.printf("handle_connectivity - MQTT attempt %d/%d\n",
                   conn_attempts + 1, CONN_MAX_MQTT_ATTEMPTS);
     display_set_connectivity_status(true, false);
-    if (mqtt_try_connect_once(saved_device_uuid)) {
+    if (ha::mqtt_try_connect_once(saved_device_uuid, mqtt_config)) {
       Serial.println("handle_connectivity - MQTT connected, going online");
       display_set_connectivity_status(true, true);
       display_show_message("MQTT status", "Online");
@@ -878,13 +876,13 @@ void handle_connectivity() {
     break;
 
   case CONN_ONLINE:
-    if (wifi_get_status() != WL_CONNECTED) {
+    if (ha::wifi_get_status() != WL_CONNECTED) {
       Serial.println("handle_connectivity - WiFi dropped, reconnecting...");
       display_set_connectivity_status(false, false);
       update_display();
       alarm_online_disable();
       conn_attempts = 0;
-      wifi_start_connect();
+      ha::wifi_start_connect(wifi_config);
       conn_state = CONN_WIFI_WAITING;
     } else if (!mqtt_client.connected()) {
       Serial.println("handle_connectivity - MQTT dropped, reconnecting...");
@@ -926,7 +924,7 @@ void loop() {
     if (!mqtt_client.loop()) {
       Serial.println("loop - mqtt_client.loop() returned false, forcing disconnect to trigger reconnect");
       mqtt_client.disconnect();
-      display_set_connectivity_status(wifi_get_status() == WL_CONNECTED, false);
+      display_set_connectivity_status(ha::wifi_get_status() == WL_CONNECTED, false);
       update_display();
       alarm_online_disable();
     }

@@ -135,7 +135,7 @@ jobs:
 
       - name: Build and run unit tests
         run: |
-          for fw in libraries/HomeAnthillCore motion airquality-airpressure lux-temp-hum pm ph water-level ac-beko ac-lg thermostat thermocouple-mcp9601; do
+          for fw in libraries/HomeAnthillCore libraries/HomeAnthillDisplay motion airquality-airpressure lux-temp-hum pm ph water-level ac-beko ac-lg thermostat thermocouple-mcp9601; do
             echo "::group::$fw"
             cmake -S $fw/tests -B $fw/tests/build
             cmake --build $fw/tests/build --parallel

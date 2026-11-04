@@ -113,7 +113,7 @@ if [[ "$run_tests" == true ]]; then
   require_command cmake
   require_command ctest
 
-  for firmware in libraries/HomeAnthillCore "${FIRMWARES[@]}"; do
+  for firmware in libraries/HomeAnthillCore libraries/HomeAnthillDisplay "${FIRMWARES[@]}"; do
     section "Running tests for $firmware"
 
     test_source_dir="$ROOT_DIR/$firmware/tests"

@@ -82,11 +82,11 @@ For a repo-wide local check, use `./build-all.sh`. It prepares missing `secrets.
 
 Each Arduino firmware includes its own project-specific `config.h` and needs a gitignored `secrets.h`. There are no config templates to copy. Copy `secrets-template` only when credentials are missing, and edit `config.h` using the local firmware README. Do not overwrite existing headers or print real secrets.
 
-### Arduino IDE: link the local HomeAnthillCore library
+### Arduino IDE: link the local firmware libraries
 
 Use a symbolic link so Arduino IDE builds the library directly from this
 checkout, without copying or installing a ZIP snapshot. The `ha::` namespace
-belongs to the `HomeAnthillCore` library.
+is used by `HomeAnthillCore` and `HomeAnthillDisplay`.
 
 Check **Settings/Preferences → Sketchbook location** in Arduino IDE. Keep the
 existing sketchbook so its other installed libraries remain available. For the
@@ -97,9 +97,11 @@ repository root**:
 mkdir -p "$HOME/Documents/Arduino/libraries"
 ln -s "$PWD/libraries/HomeAnthillCore" \
   "$HOME/Documents/Arduino/libraries/HomeAnthillCore"
+ln -s "$PWD/libraries/HomeAnthillDisplay" \
+  "$HOME/Documents/Arduino/libraries/HomeAnthillDisplay"
 ```
 
-Adjust the destination if the sketchbook is elsewhere. If the destination
+If Core is already linked, add only the Display link. Adjust the destination if the sketchbook is elsewhere. If the destination
 already exists, inspect it before replacing it; do not overwrite an installed
 copy or an existing link blindly. The absolute source path keeps the link valid
 when building from another directory. If the checkout moves, recreate the link
@@ -221,7 +223,7 @@ Thermostat settings in `config.h`:
 - Host `test_main_ino` coverage must compile and run both `OPERATING_MODE=0` and `OPERATING_MODE=1` variants, plus cooling variants with either rise check disabled and both disabled.
 - **HARDWARE SAFETY REQUIREMENT**: every HEAT, COLD, FAN, and PUMP control input must have an external resistor that holds it at the configured inactive level while the ESP32 pin is high-impedance during reset, bootloader execution, USB flashing, startup, or loss of ESP32 power. Use a pull-up for each active-low output and a pull-down for each active-high output. If any `*_ACTIVE_LOW` setting changes, review the corresponding hardware bias. Firmware initialization cannot replace this protection.
 - Output startup safety: `outputs_init()` must remain the first hardware action in `setup()`. It preloads each inactive ESP32 output latch with `gpio_set_level()` before `pinMode()` enables the driver.
-- Has an OLED display module (SSD1306 128x32 via I2C) — `display.cpp/h`
+- Uses the shared `HomeAnthillDisplay` SSD1306 128x32 engine and a local temperature-focused `display_policy.h`.
 - Extended `storage.cpp` with `storage_get_feature_values()` / `storage_set_feature_values()` for persisting controller state (`"featureValues"` key in Preferences)
 - **Offline-first design**: alarms are enabled in `setup()` *before* any WiFi attempt; the thermostat controls temperature immediately on boot regardless of network state
 - WiFi/MQTT are managed by a non-blocking **state machine** (`handle_connectivity()` in `thermostat.ino`) — one step per `loop()` iteration — so `Alarm.delay()` is always reached and the control loop never stalls
@@ -255,7 +257,7 @@ header. Device control, displays, and calibration remain local.
 - **`anthill/signing.h`** — ESP32 HMAC-SHA256 and random nonce generation; controllers call the same HMAC function for command verification.
 - **`anthill/storage.h`** — Preferences persistence under namespace `device`, including UUID, features, and complete controller-state arrays.
 - **`anthill/feature_values.h`** — In-memory feature cache. Call `ha::feature_values_init(features, controller_defaults)` with `true` for the IR controllers and `false` for sensors/thermostat; the other cache accessors remain global.
-- **`display.cpp/h`** — Local optional SSD1306 output behind `OLED_DISPLAY`, forced on in tests with `HOME_ANTHILL_TEST_OLED_DISPLAY`.
+- **`HomeAnthillDisplay`** — Shared SSD1306 implementation with plain `ha::display_*` functions, `DisplayConfig`, and `DisplayPolicy`. Include `<HomeAnthillDisplayConfig.h>` after local settings for the common configuration object. Call `ha::display_init()` and the other functions directly; do not duplicate implementations or add forwarding display headers. Only devices with custom presentation have local `display_policy.h` callbacks/data. IR constants stay in those policies, outside the library. pH uses the shared four-line overlay API. `OLED_DISPLAY=false` disables hardware operations at runtime; display build dependencies are still required. State stays private in `display.cpp`; do not add display wrapper classes or manual driver allocation. A function-local static driver fixes the bus object and reset pin at the first enabled initialization. Host display tests force enabled mode with `HOME_ANTHILL_TEST_OLED_DISPLAY`.
 
 ### Key flow
 
@@ -323,7 +325,7 @@ GitHub Actions workflow (`.github/workflows/run-build.yml`) builds all active fi
 
 **motion**: HLK-LD2410C OUT is polled every second and publishes on transitions. UART startup uses 256000 baud. `MOTION_UART_TX` is passed as the actual ESP32 RX argument (GPIO6), and `MOTION_UART_RX` as TX (GPIO7); document the effective wiring, not just the macro names. Configuration emphasizes moving targets (stationary gate 0/thresholds 100). Do not promise stationary occupancy, a fixed warmup, or a reliable 30-second alarm suppression window from the current code.
 
-**ph**: ADS1115 at 0x48 reads differential AIN0–AIN1 (PH_BUF minus VBIAS), GAIN_FOUR, 16 SPS. GPIO17 calibrates with a debounced three-second hold/tap state machine. Preserve the `ph-meter` / `cal` version-1 record, slope validation, 20-sample 1 mV stability checks, explicit save confirmation, and rejection of saturated/stale samples. Calibration UI uses a four-line overlay in its local display module. Network modules retain the ordinary sensor architecture; blocking connection attempts can pause local sampling.
+**ph**: ADS1115 at 0x48 reads differential AIN0–AIN1 (PH_BUF minus VBIAS), GAIN_FOUR, 16 SPS. GPIO17 calibrates with a debounced three-second hold/tap state machine. Preserve the `ph-meter` / `cal` version-1 record, slope validation, 20-sample 1 mV stability checks, explicit save confirmation, and rejection of saturated/stale samples. Calibration UI uses the shared HomeAnthillDisplay four-line overlay API. Network modules retain the ordinary sensor architecture; blocking connection attempts can pause local sampling.
 
 **ac-beko** / **ac-lg**: IR remote controllers without environmental sensing or appliance acknowledgment. GPIO4 drives a suitable external emitter driver. COOLIX supports setpoint 17–30 °C; LG supports 16–30 °C and selects remote AKB74955603. List feature values are protocol constants, not continuous ranges. When modifying IR codes, test against the real AC unit. IR LED power and frequency are hardware-dependent; there is no universal appliance settling time.
 
@@ -342,7 +344,7 @@ To add a new device:
 
 1. Create a new directory with the device name (snake_case).
 2. Include `<HomeAnthillCore.h>` directly and `<HomeAnthillConfig.h>` after local `config.h` and `secrets.h` for configuration objects. Define the selected plain/TLS client in the sketch, following the closest firmware. Do not duplicate the configuration bridge, copy library implementations, or add forwarding wrappers.
-3. Create device-specific modules (e.g., `sensor_name.h`).
+3. Create device-specific modules (e.g., `sensor_name.h`). Use `HomeAnthillDisplay` for OLED output; add only meaningful presentation policies locally, not copied display implementations.
 4. Create the main `<device_name>.ino` file with:
    - `setup()`: initialize WiFi → register → MQTT → sensor-specific init
    - `loop()`: handle WiFi/MQTT reconnects, alarm management

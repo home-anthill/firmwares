@@ -1,3 +1,4 @@
+#include <HomeAnthillDisplay.h>
 #include <gtest/gtest.h>
 #include <cstring>
 #include <cmath>
@@ -20,6 +21,7 @@
 // Headers from the firmware (needed for function signatures only).
 #include <HomeAnthillCore.h>
 #include "sen65_sensor.h"
+
 
 // =============================================================================
 // Stubs — provide every external symbol that <main-project-arduino-file>.ino references.
@@ -94,12 +96,12 @@ void ha::mqtt_notify_value(const char* device_uuid, const char* feature_uuid, co
 
 // --- display ----------------------------------------------------------------
 
-void init_display(uint8_t) {}
-void update_display() {}
-void display_force_update() {}
-void display_show_message(const char*, const char*) {}
-void display_set_connectivity_status(bool, bool) {}
-void display_sleep_for(unsigned long) {}
+void ha::display_init(const ha::DisplayConfig&, const ha::DisplayPolicy&) {}
+void ha::display_update() {}
+void ha::display_force_update() {}
+void ha::display_show_message(const char*, const char*) {}
+void ha::display_set_connectivity_status(bool, bool) {}
+void ha::display_sleep_for(unsigned long) {}
 
 static Sen65Reading sample{1, 2, 3, 4, 50, 23, 100, 5};
 void sen65_init_sensor() {}

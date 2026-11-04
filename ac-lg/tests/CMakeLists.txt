@@ -2,7 +2,8 @@ cmake_minimum_required(VERSION 3.14)
 project(main_tests CXX)
 
 set(HOME_ANTHILL_CORE_SRC "${CMAKE_CURRENT_LIST_DIR}/../../libraries/HomeAnthillCore/src")
-include_directories("${HOME_ANTHILL_CORE_SRC}")
+set(HOME_ANTHILL_DISPLAY_SRC "${CMAKE_CURRENT_LIST_DIR}/../../libraries/HomeAnthillDisplay/src")
+include_directories("${HOME_ANTHILL_CORE_SRC}" "${HOME_ANTHILL_DISPLAY_SRC}")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -114,7 +115,7 @@ target_link_libraries(test_feature_values
 # ---------------------------------------------------------------------------
 add_executable(test_display
   test_display.cpp
-  ../display.cpp
+  ${HOME_ANTHILL_DISPLAY_SRC}/display.cpp
 )
 
 target_compile_definitions(test_display PRIVATE HOME_ANTHILL_TEST_OLED_DISPLAY)

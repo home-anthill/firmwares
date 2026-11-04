@@ -59,6 +59,12 @@ should link `libraries/HomeAnthillCore` into their existing sketchbook's
 `libraries` folder once; see the [library setup guide](libraries/HomeAnthillCore/README.md#arduino-ide).
 
 
+All ten Arduino firmwares also use [HomeAnthillDisplay](libraries/HomeAnthillDisplay/README.md)
+for shared OLED rendering, button handling, sleep, and overlays. Device-specific
+labels and presentation policies stay local. Arduino IDE users must link both
+local libraries into the sketchbook. Display build dependencies are required even
+with `OLED_DISPLAY=false`; that setting disables display hardware operations.
+
 ## GPIO configuration
 
 Each Arduino firmware includes its own project-specific `config.h` for GPIO

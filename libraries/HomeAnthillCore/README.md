@@ -32,7 +32,12 @@ folder. For the default macOS sketchbook and this checkout, run once:
 mkdir -p "$HOME/Documents/Arduino/libraries"
 ln -s /Users/ks89/git/home-anthill/firmwares/libraries/HomeAnthillCore \
   "$HOME/Documents/Arduino/libraries/HomeAnthillCore"
+ln -s /Users/ks89/git/home-anthill/firmwares/libraries/HomeAnthillDisplay \
+  "$HOME/Documents/Arduino/libraries/HomeAnthillDisplay"
 ```
+
+If Core is already linked, run only the Display command. Both links point to
+the current library sources in the checkout, without copying them.
 
 Check the actual sketchbook path in Arduino IDE Settings/Preferences and adjust
 these paths for another machine. If `HomeAnthillCore` already exists there,

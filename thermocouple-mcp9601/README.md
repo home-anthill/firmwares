@@ -57,6 +57,10 @@ communication failure or frozen value. Failed initialization requires a restart.
 
 ## Arduino libraries
 
+The shared [HomeAnthillDisplay](../libraries/HomeAnthillDisplay/README.md) library
+requires the listed OLED libraries to build even with `OLED_DISPLAY=false`.
+OLED hardware remains optional.
+
 ```bash
 arduino-cli lib install "ArduinoJson"@7.4.3 "PubSubClient"@2.8.0 \
   "TimeAlarms"@1.5.0 "Time"@1.6.1 "Adafruit MCP9600 Library"@2.0.4 \

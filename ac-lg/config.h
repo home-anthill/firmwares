@@ -1,6 +1,7 @@
 #pragma once
 
-// OLED display support. When OLED_DISPLAY=false, OLED code is not compiled.
+// OLED hardware support. When false, shared display operations do not touch hardware.
+// HomeAnthillDisplay and its OLED build dependencies are still compiled.
 // Use OLED_RESET=-1 to connect OLED reset to the board reset.
 #define OLED_DISPLAY true
 #define OLED_RESET -1 
@@ -18,4 +19,4 @@
 #define BOARD_RGB_LED_PIN 38
 
 // Specific device configuration
-#define IR_SEND_PIN 4
+#define IR_SEND_PIN 17

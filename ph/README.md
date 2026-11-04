@@ -76,7 +76,9 @@ arduino-cli lib install "ArduinoJson"@7.4.3 "PubSubClient"@2.8.0 \
 arduino-cli lib install "Adafruit ADS1X15"@2.6.2
 ```
 
-In this firmware the 128×32 SSD1306 OLED (`OLED_DISPLAY=true`) display is required, so install:
+The calibration UI uses the 128×32 SSD1306 OLED. The shared
+[HomeAnthillDisplay](../libraries/HomeAnthillDisplay/README.md) library requires
+these build dependencies even with `OLED_DISPLAY=false`:
 
 ```sh
 arduino-cli lib install "Adafruit GFX Library"@1.12.6 \

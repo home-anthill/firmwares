@@ -20,7 +20,9 @@
 #include <HomeAnthillConfig.h>
 #include "barometer_sensor.h"
 #include "co2_sensor.h"
-#include "display.h"
+#include <HomeAnthillDisplay.h>
+#include <HomeAnthillDisplayConfig.h>
+#include "display_policy.h"
 
 #if SSL==true
 WiFiClientSecure wifi_client;
@@ -286,7 +288,7 @@ void setup() {
   delay(1000);
 
   Serial.println("setup - starting...");
-  init_display(DISPLAY_BUTTON_PIN);
+  ha::display_init(display_config, display_policy);
 
   // 0. configure hardware
   rgbLedWrite(BOARD_RGB_LED_PIN, 0, 0, 0); 
@@ -310,11 +312,11 @@ void setup() {
 
   // 3. connect to wifi
   Serial.println("setup - connect wifi...");
-  display_set_connectivity_status(false, false);
-  update_display();
+  ha::display_set_connectivity_status(false, false);
+  ha::display_update();
   ha::wifi_connect(wifi_config, mac_address);
-  display_set_connectivity_status(true, false);
-  display_show_message("WiFi status", "Online");
+  ha::display_set_connectivity_status(true, false);
+  ha::display_show_message("WiFi status", "Online");
 
   // 4. register to the server
   Serial.println("setup - registering this device...");
@@ -379,23 +381,23 @@ void loop() {
 
   // if not connected to the wifi, try to reconnect
   if (ha::wifi_get_status() != WL_CONNECTED) {
-    display_set_connectivity_status(false, false);
-    update_display();
+    ha::display_set_connectivity_status(false, false);
+    ha::display_update();
     alarms_disable();
     Serial.println("loop - WiFi connection lost!");
     ha::wifi_reconnect(wifi_config, mac_address);
-    display_set_connectivity_status(true, mqtt_client.connected());
-    display_show_message("WiFi status", "Online");
+    ha::display_set_connectivity_status(true, mqtt_client.connected());
+    ha::display_show_message("WiFi status", "Online");
   }
 
   // if not connected to mqtt server, try to reconnect
   if (!mqtt_client.connected()) {
-    display_set_connectivity_status(true, false);
-    update_display();
+    ha::display_set_connectivity_status(true, false);
+    ha::display_update();
     Serial.println("loop - mqtt connecting...");
     ha::mqtt_connect(saved_device_uuid, mqtt_config);
-    display_set_connectivity_status(true, true);
-    display_show_message("MQTT status", "Online");
+    ha::display_set_connectivity_status(true, true);
+    ha::display_show_message("MQTT status", "Online");
     publish_initial_values();
     // starts alarms
     alarms_enable();
@@ -409,10 +411,10 @@ void loop() {
   if (!mqtt_client.loop()) {
     Serial.println("loop - mqtt_client.loop() returned false, forcing disconnect to trigger reconnect");
     mqtt_client.disconnect();
-    display_set_connectivity_status(ha::wifi_get_status() == WL_CONNECTED, false);
-    update_display();
+    ha::display_set_connectivity_status(ha::wifi_get_status() == WL_CONNECTED, false);
+    ha::display_update();
   }
 
-  update_display();
+  ha::display_update();
   Alarm.delay(100);
 }

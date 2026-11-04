@@ -37,8 +37,9 @@
 // Headers from the firmware (needed for function signatures only).
 #include <HomeAnthillCore.h>
 #include "temp_sensor.h"
-#include "display.h"
+#include <HomeAnthillDisplay.h>
 #include "controller.h"
+
 
 // =============================================================================
 // Stubs — provide every external symbol that thermostat.ino references.
@@ -235,8 +236,8 @@ struct UpdateDisplayCapture {
   static void reset() { instance() = UpdateDisplayCapture{}; }
 };
 
-void init_display(uint8_t)     {}
-void update_display() {
+void ha::display_init(const ha::DisplayConfig&, const ha::DisplayPolicy&) {}
+void ha::display_update() {
   auto& values = FeatureValuesCapture::instance().values;
   if (display_feature_index < values.size()) {
     UpdateDisplayCapture::instance().last_name = values[display_feature_index].type;
@@ -245,16 +246,16 @@ void update_display() {
   }
   UpdateDisplayCapture::instance().call_count++;
 }
-void display_force_update() {
-  update_display();
+void ha::display_force_update() {
+  ha::display_update();
 }
-void display_show_message(const char* title, const char* detail) {
+void ha::display_show_message(const char* title, const char* detail) {
   g_display_message_calls++;
   g_last_display_message_title = title == nullptr ? "" : title;
   g_last_display_message_detail = detail == nullptr ? "" : detail;
 }
-void display_set_connectivity_status(bool, bool) {}
-void display_sleep_for(unsigned long) {}
+void ha::display_set_connectivity_status(bool, bool) {}
+void ha::display_sleep_for(unsigned long) {}
 
 // --- controller (controllable setpoint/tolerance; set_configuration captured) ---
 

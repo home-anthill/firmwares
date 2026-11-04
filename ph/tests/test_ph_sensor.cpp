@@ -1,3 +1,4 @@
+#include <HomeAnthillDisplay.h>
 #include <gtest/gtest.h>
 #include <cmath>
 #include <cstring>
@@ -11,13 +12,14 @@
 #include "config.h"
 #include "secrets.h"
 
+
 static std::string screen[4];
 static std::vector<std::string> titles;
-void display_set_overlay(const char* a, const char* b, const char* c, const char* d) {
+void ha::display_set_overlay(const char* a, const char* b, const char* c, const char* d) {
   titles.push_back(a);
   screen[0] = a; screen[1] = b; screen[2] = c; screen[3] = d;
 }
-void display_clear_overlay() {}
+void ha::display_clear_overlay() {}
 
 // Wire-compatible dev-kit record, kept as a single NVS blob.
 struct SavedCalibration { uint32_t version; float ph1, ph2, v1, v2; };

@@ -1,7 +1,7 @@
 #include "config.h"
 #include "secrets.h"
 #include "ph_sensor.h"
-#include "display.h"
+#include <HomeAnthillDisplay.h>
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -120,34 +120,34 @@ static void draw_screen() {
     case Mode::MEASURE: {
       const PhReading reading = ph_read();
       if (!state.adc_ready) {
-        display_set_overlay("ADS1115 not found", "Check I2C and power", "Restart after fixing");
+        ha::display_set_overlay("ADS1115 not found", "Check I2C and power", "Restart after fixing");
       } else if (!state.sample_valid) {
-        display_set_overlay("Measurement invalid", "Check probe/wiring", "Hold 3s: calibrate");
+        ha::display_set_overlay("Measurement invalid", "Check probe/wiring", "Hold 3s: calibrate");
       } else if (!state.calibrated) {
-        display_set_overlay("Calibration required", signal, "Hold 3s: calibrate");
+        ha::display_set_overlay("Calibration required", signal, "Hold 3s: calibrate");
       } else {
         if (isfinite(reading.ph)) {
           snprintf(value, sizeof(value), "pH: %.2f", reading.ph);
         } else {
           snprintf(value, sizeof(value), "pH out of range");
         }
-        display_set_overlay(value, signal, "Hold 3s: calibrate");
+        ha::display_set_overlay(value, signal, "Hold 3s: calibrate");
       }
       break;
     }
     case Mode::SELECT_PAIR:
-      display_set_overlay("Choose buffer pair", state.alkaline_pair ? "7 - 10" : "4 - 7",
+      ha::display_set_overlay("Choose buffer pair", state.alkaline_pair ? "7 - 10" : "4 - 7",
                           "Tap: change", "Hold 3s: select");
       break;
     case Mode::BUFFER_7:
     case Mode::BUFFER_SECOND:
       snprintf(value, sizeof(value), "Immerse in pH %.2f",
                state.mode == Mode::BUFFER_7 ? PH_NEUTRAL : state.pending.ph2);
-      display_set_overlay(value, signal, state.stable ? "Stable: tap to take" : "Wait for stability",
+      ha::display_set_overlay(value, signal, state.stable ? "Stable: tap to take" : "Wait for stability",
                           "Hold 3s: cancel");
       break;
     case Mode::CONFIRM:
-      display_set_overlay("Save calibration?", "Tap: save", "Hold 3s: cancel");
+      ha::display_set_overlay("Save calibration?", "Tap: save", "Hold 3s: cancel");
       break;
   }
 }
@@ -189,7 +189,7 @@ static void on_short_press() {
       if (!valid_calibration(state.pending)) {
         Serial.println("Invalid slope. Check buffers and wiring; take point again.");
         reset_stability();
-        display_set_overlay("Invalid calibration", "Check buffers/wiring", "Wait, then retry", "Hold 3s: cancel");
+        ha::display_set_overlay("Invalid calibration", "Check buffers/wiring", "Wait, then retry", "Hold 3s: cancel");
         return;
       }
       state.mode = Mode::CONFIRM;
@@ -198,7 +198,7 @@ static void on_short_press() {
   } else if (state.mode == Mode::CONFIRM) {
     if (!state.memory_ready || memory.putBytes("cal", &state.pending, sizeof(state.pending)) != sizeof(state.pending)) {
       Serial.println("Flash write failed. Tap to retry.");
-      display_set_overlay("Save failed", "Tap to retry", "Hold 3s: cancel");
+      ha::display_set_overlay("Save failed", "Tap to retry", "Hold 3s: cancel");
       return;
     }
     state.saved = state.pending;
@@ -289,7 +289,7 @@ void ph_sensor_update() {
   state.volts = adc.computeVolts(raw);
   if (raw > 32700 || raw < -32700 || !isfinite(state.volts)) {
     invalidate_sample();
-    display_set_overlay("ADC out of range", "Check probe/wiring", "Hold 3s: calibrate");
+    ha::display_set_overlay("ADC out of range", "Check probe/wiring", "Hold 3s: calibrate");
     return;
   }
   state.sample_valid = true;

@@ -51,7 +51,10 @@ arduino-cli lib install "ArduinoJson"@7.4.3 "PubSubClient"@2.8.0 \
 arduino-cli lib install "IRremoteESP8266"@2.9.0
 ```
 
-For the optional 128×32 SSD1306 OLED (`OLED_DISPLAY=true`), also install:
+The shared [HomeAnthillDisplay](../libraries/HomeAnthillDisplay/README.md) library
+requires these build dependencies even with `OLED_DISPLAY=false`. OLED hardware
+remains optional:
+
 
 ```sh
 arduino-cli lib install "Adafruit GFX Library"@1.12.6 \
